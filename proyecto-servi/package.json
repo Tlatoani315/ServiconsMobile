@@ -41,7 +41,11 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "apk:preview": "npx eas build -p android --profile preview",
+    "apk:local": "npx eas build -p android --profile local",
+    "apk:production": "npx eas build -p android --profile production",
+    "apk:list": "npx eas build:list --platform android --limit 5"
   },
   "private": true
 }

@@ -1,0 +1,790 @@
+================================================================
+PROYECTO SERVI (SERVICONS MOBILE) — PROMPT MAESTRO v2
+Single Source of Truth para Cursor / Gemini
+================================================================
+Lee TODO este documento antes de escribir código.
+Confirma cada fase en Expo Go antes de avanzar a la siguiente.
+================================================================
+
+================================================================
+SECCIÓN 1 — RESUMEN EJECUTIVO
+================================================================
+
+App: Servicons Mobile
+Plataforma: 100% móvil (React Native + Expo). NO existe dashboard
+web ni panel de monitoristas. El custodio es el ÚNICO actor.
+
+QUÉ HACE EL CUSTODIO EN LA APP:
+  1. Inicia sesión (Supabase Auth)
+  2. Crea bitácoras (wizard de 7 pasos con datos legales del servicio)
+  3. Inicia la custodia (GPS + fotos periódicas + botón SOS)
+  4. Cierra el servicio (última foto + firma operador + firma custodio)
+
+REGLA DE ORO:
+  custodio_id = auth.uid() SIEMPRE.
+  La app NUNCA permite insertar un custodio_id diferente al usuario
+  de la sesión activa. Sin monitoristas. Sin asignación externa.
+
+================================================================
+SECCIÓN 2 — STACK TECNOLÓGICO
+================================================================
+
+Framework:     React Native con Expo (TypeScript)
+Estilos:       NativeWind (Tailwind para React Native)
+Navegación:    expo-router (estructura basada en archivos)
+Backend:       Supabase (Auth + PostgreSQL + Storage + Realtime)
+Pruebas:       Expo Go en dispositivo físico
+
+DEPENDENCIAS — ejecutar en orden:
+
+  npx create-expo-app@latest servicons-mobile -t expo-template-blank-typescript
+  cd servicons-mobile
+  npx expo install expo-router expo-location expo-camera expo-secure-store
+  npm install @supabase/supabase-js nativewind tailwindcss
+  npm install react-native-url-polyfill @react-native-async-storage/async-storage
+
+ARCHIVO .env EN LA RAÍZ (agregar al .gitignore):
+
+  EXPO_PUBLIC_SUPABASE_URL=https://torolfqiwrrhqocguwjg.supabase.co
+  EXPO_PUBLIC_SUPABASE_KEY=sb_publishable_bITKQK4QQrnmGhUHir3XSA_X1MKvagv
+
+================================================================
+SECCIÓN 3 — ESTRUCTURA DE CARPETAS
+================================================================
+
+servicons-mobile/
+├── app/                              ← expo-router (pantallas)
+│   ├── _layout.tsx                   ← layout raíz + AuthProvider
+│   ├── index.tsx                     ← Welcome Screen
+│   ├── auth/
+│   │   └── login.tsx                 ← Login Screen
+│   └── (app)/                        ← rutas protegidas (requieren sesión)
+│       ├── _layout.tsx               ← protección de ruta + nav tabs
+│       ├── home.tsx                  ← Mis bitácoras (lista desde Supabase)
+│       ├── bitacora/
+│       │   ├── index.tsx             ← FAB + lista unificada
+│       │   └── wizard/
+│       │       ├── step1.tsx         ← General (nombre, empresa, folio, origen, destino)
+│       │       ├── step2.tsx         ← Vehículo custodia + tiempos iniciales
+│       │       ├── step3.tsx         ← Tiempos de viaje (salida, llegada, km)
+│       │       ├── step4.tsx         ← Responsables origen y destino + firmas
+│       │       ├── step5.tsx         ← Operador 1 (datos + vehículo + firma)
+│       │       ├── step6.tsx         ← Operador 2 (opcional)
+│       │       └── step7.tsx         ← Observaciones → INSERT en Supabase
+│       └── custody/
+│           ├── details.tsx           ← Revisar bitácora e INICIAR custodia
+│           ├── active.tsx            ← Servicio en curso (timer + fotos + SOS)
+│           └── finish.tsx            ← Cierre (última foto + firmas)
+├── components/
+│   ├── SOSButton.tsx                 ← Botón rojo grande, confirmación antes de activar
+│   ├── TimerBar.tsx                  ← Barra de cuenta regresiva de reportes
+│   ├── ServiceCard.tsx               ← Tarjeta de bitácora en lista
+│   └── SignaturePad.tsx              ← Canvas de firma Base64
+├── hooks/
+│   ├── useAuth.ts                    ← signIn, signOut, sesión activa
+│   ├── useBitacora.ts                ← CRUD de bitácoras en Supabase
+│   ├── useEvidencias.ts              ← subir foto + guardar evidencia
+│   └── useLocation.ts               ← latitud/longitud con expo-location
+├── lib/
+│   └── supabaseClient.ts             ← cliente oficial de Supabase
+├── services/
+│   └── n8nService.ts                 ← POST a webhooks de n8n (SOS, foto, cierre)
+├── store/
+│   └── useBitacoraStore.ts           ← Zustand: estado local del wizard
+├── types/
+│   ├── models.ts                     ← interfaces TypeScript completas
+│   └── bitacora.ts                   ← tipo resumen para listado
+├── .env                              ← credenciales (en .gitignore)
+├── .gitignore
+├── app.json
+├── babel.config.js
+└── tailwind.config.js
+
+================================================================
+SECCIÓN 4 — ARCHIVO utils/supabase.ts (código oficial de Supabase)
+================================================================
+
+IMPORTANTE: Supabase generó este archivo. Úsalo exactamente así.
+Ruta en el proyecto: lib/supabaseClient.ts
+
+--- INICIO DEL ARCHIVO ---
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL!,
+  process.env.EXPO_PUBLIC_SUPABASE_KEY!,
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+)
+--- FIN DEL ARCHIVO ---
+
+================================================================
+SECCIÓN 5 — BASE DE DATOS EN SUPABASE (ejecutar en SQL Editor)
+================================================================
+
+Ejecuta estos bloques en Supabase → SQL Editor → New Query.
+Orden obligatorio: primero profiles, luego el resto.
+
+-----------------------------------------------------------------
+-- TABLA 1: profiles
+-- Extiende auth.users con datos del custodio
+-----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  nombre      TEXT NOT NULL,
+  email       TEXT,
+  celular     TEXT,
+  activo      BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "usuario_propio" ON public.profiles
+  FOR ALL USING (auth.uid() = id);
+
+-- Auto-crear perfil al registrar usuario en Auth:
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email)
+  VALUES (NEW.id, NEW.email);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-----------------------------------------------------------------
+-- TABLA 2: bitacoras
+-- Una fila = un servicio de custodia completo
+-- El campo "formulario" (jsonb) guarda el wizard completo
+-----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.bitacoras (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  custodio_id             UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+
+  -- Columnas resumen (para listar sin parsear JSON)
+  nombre                  TEXT,           -- nombre del servicio (paso 1)
+  ruta                    TEXT,           -- "origen → destino" o nombre
+  unidad                  TEXT,           -- placas del vehículo custodiado
+  empresa_contratante     TEXT,
+
+  -- Estado del ciclo de vida
+  estado                  TEXT DEFAULT 'pendiente' CHECK (estado IN (
+                            'pendiente', 'activo', 'completado', 'cancelado'
+                          )),
+
+  -- Formulario completo del wizard (7 pasos)
+  formulario              JSONB,
+
+  -- Intervalo de reportes fotográficos (minutos)
+  report_interval_minutes INT DEFAULT 15,
+
+  -- Firmas (Base64 data-URL o path en Storage)
+  firma_custodio          TEXT,
+  firma_operador          TEXT,
+
+  -- Tiempos del servicio
+  start_time              TIMESTAMPTZ,
+  completed_at            TIMESTAMPTZ,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.bitacoras ENABLE ROW LEVEL SECURITY;
+
+-- Solo el custodio dueño puede ver, crear, editar sus bitácoras
+CREATE POLICY "dueno_bitacora" ON public.bitacoras
+  FOR ALL USING (custodio_id = auth.uid())
+  WITH CHECK (custodio_id = auth.uid());
+
+-----------------------------------------------------------------
+-- TABLA 3: evidencias
+-- Fotos periódicas con GPS durante el servicio activo
+-----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.evidencias (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bitacora_id     UUID NOT NULL REFERENCES public.bitacoras(id) ON DELETE CASCADE,
+  custodio_id     UUID NOT NULL REFERENCES auth.users(id),
+  url_imagen      TEXT,                          -- URL del Storage de Supabase
+  latitud         DOUBLE PRECISION NOT NULL,     -- OBLIGATORIO
+  longitud        DOUBLE PRECISION NOT NULL,     -- OBLIGATORIO
+  observaciones   TEXT,
+  timestamp       TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.evidencias ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "dueno_evidencias" ON public.evidencias
+  FOR ALL USING (custodio_id = auth.uid())
+  WITH CHECK (custodio_id = auth.uid());
+
+-----------------------------------------------------------------
+-- TABLA 4: sos_alerts
+-- Alertas de emergencia disparadas desde la app
+-----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.sos_alerts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  custodio_id     UUID NOT NULL REFERENCES auth.users(id),
+  bitacora_id     UUID REFERENCES public.bitacoras(id),
+  latitud         DOUBLE PRECISION NOT NULL,
+  longitud        DOUBLE PRECISION NOT NULL,
+  estado          TEXT DEFAULT 'activa' CHECK (estado IN (
+                    'activa', 'atendida', 'falsa_alarma'
+                  )),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.sos_alerts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "dueno_sos" ON public.sos_alerts
+  FOR ALL USING (custodio_id = auth.uid())
+  WITH CHECK (custodio_id = auth.uid());
+
+-----------------------------------------------------------------
+-- STORAGE: buckets para fotos y firmas
+-----------------------------------------------------------------
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('evidencias', 'evidencias', false)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('firmas', 'firmas', false)
+ON CONFLICT DO NOTHING;
+
+-- Política storage: solo el dueño sube/lee sus archivos
+-- Ruta obligatoria: {custodio_id}/{bitacora_id}/archivo.jpg
+CREATE POLICY "custodio_evidencias_upload" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'evidencias'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "custodio_evidencias_read" ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'evidencias'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+================================================================
+SECCIÓN 6 — INTERFACES TYPESCRIPT COMPLETAS
+================================================================
+
+Archivo: types/models.ts — COPIAR EXACTAMENTE
+
+--- INICIO DEL ARCHIVO ---
+export interface Ubicacion {
+  estado: string;
+  municipio: string;
+  personalAsignado: string;
+}
+
+export interface VehiculoCustodia {
+  placas: string;
+  color: string;
+  celular: string;
+}
+
+export interface Tiempos {
+  fechaHoraCita: string;
+  fechaHoraPresentacion?: string;
+  odometroInicial: string;
+  fechaHoraSalida?: string;
+  fechaHoraVerificacion?: string;
+  fechaHoraLlegada?: string;
+  fechaHoraFin?: string;
+  odometroFinal?: string;
+  kmTotales?: string;
+  estadia?: string;
+}
+
+export interface Responsable {
+  nombre: string;
+  firma: string;         // Base64 data-URL
+}
+
+export interface VehiculoOperador {
+  modelo: string;
+  color: string;
+  placas: string;
+  marca: string;
+  placaRemolque1: string;
+  numEco: string;
+  sellos: string;
+  ecoTracto: string;
+  pedimento: string;
+  placaRemolque2: string;
+  empresaTransporte: string;
+}
+
+export interface OperadorCustodiado {
+  nombre: string;
+  firma: string;         // Base64 data-URL
+  celular: string;
+  vehiculo: VehiculoOperador;
+}
+
+export interface Firma {
+  format: 'data-url';
+  mime: 'image/png' | 'image/jpeg';
+  encoding: 'base64';
+  capturedAt: string;
+  signerRole: 'custodio' | 'operador' | 'responsable_origen' | 'responsable_destino';
+  signerName: string;
+  data: string;         // data:image/png;base64,...
+}
+
+export interface BitacoraFormulario {
+  id: string;
+  nombre: string;                        // Paso 1 — obligatorio
+  empresaContratante: string;            // Paso 1
+  folioCliente: string;                  // Paso 1
+  origen: Ubicacion;                     // Paso 1
+  destino: Ubicacion;                    // Paso 1
+  vehiculoCustodia: VehiculoCustodia;    // Paso 2
+  tiempos: Tiempos;                      // Pasos 2-3
+  responsableOrigen: Responsable;        // Paso 4
+  responsableDestino: Responsable;       // Paso 4
+  operador1: OperadorCustodiado;         // Paso 5
+  operador2?: OperadorCustodiado;        // Paso 6 (opcional)
+  observaciones: string;                 // Paso 7
+  reportIntervalMinutes?: number;        // Paso 2 o config
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Tipo resumen para listado en Home (sin parsear formulario completo)
+export interface BitacoraResumen {
+  id: string;
+  nombre: string;
+  ruta: string;
+  unidad: string;
+  empresa_contratante: string;
+  estado: 'pendiente' | 'activo' | 'completado' | 'cancelado';
+  created_at: string;
+  completed_at?: string;
+  custodio_id: string;
+}
+
+export interface Evidencia {
+  id: string;
+  bitacora_id: string;
+  custodio_id: string;
+  url_imagen: string;
+  latitud: number;
+  longitud: number;
+  observaciones?: string;
+  timestamp: string;
+}
+
+export interface SosAlert {
+  id: string;
+  custodio_id: string;
+  bitacora_id?: string;
+  latitud: number;
+  longitud: number;
+  estado: 'activa' | 'atendida' | 'falsa_alarma';
+  created_at: string;
+}
+--- FIN DEL ARCHIVO ---
+
+================================================================
+SECCIÓN 7 — FASES DE DESARROLLO (EJECUTAR EN ORDEN)
+================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 1 — SETUP Y CLIENTE SUPABASE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Proyecto corre en Expo Go sin errores.
+
+1. Crear proyecto con el comando de la Sección 2.
+2. Instalar todas las dependencias.
+3. Crear lib/supabaseClient.ts con el código de la Sección 4.
+4. Crear .env con las credenciales de la Sección 2.
+5. Configurar app.json con permisos:
+   iOS:
+     NSLocationWhenInUseUsageDescription: "Necesitamos tu ubicación para los reportes."
+     NSCameraUsageDescription: "Necesitamos la cámara para las evidencias."
+   Android:
+     permissions: ["ACCESS_FINE_LOCATION", "CAMERA"]
+6. Configurar NativeWind:
+   - tailwind.config.js: content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"]
+   - babel.config.js: agregar "nativewind/babel" a los plugins
+7. Crear app/index.tsx — Welcome Screen con botón "Iniciar sesión".
+8. Crear app/_layout.tsx — layout raíz vacío que escucha la sesión.
+
+VERIFICACIÓN: App abre en Expo Go y muestra Welcome Screen.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 2 — AUTENTICACIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Login real con Supabase → redirige a Home.
+
+1. hooks/useAuth.ts:
+   - signIn(email, password): usa supabase.auth.signInWithPassword
+   - signOut(): usa supabase.auth.signOut
+   - Escuchar supabase.auth.onAuthStateChange para la sesión
+   - Exponer: { session, loading, signIn, signOut }
+
+2. app/auth/login.tsx:
+   - Campos: email y contraseña (teclado tipo email-address)
+   - Botón "Iniciar sesión"
+   - Mostrar error si credenciales incorrectas
+   - Enlace "¿Olvidaste tu contraseña?" → supabase.auth.resetPasswordForEmail
+
+3. app/_layout.tsx — lógica de redirección:
+   - Si hay sesión activa → router.replace('/(app)/home')
+   - Si no hay sesión    → router.replace('/auth/login')
+
+4. app/(app)/_layout.tsx — protección de rutas:
+   - Si no hay sesión → redirige a login automáticamente
+
+VERIFICACIÓN: Login con usuario real de Supabase redirige a Home.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 3 — HOME Y LISTADO DE BITÁCORAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Custodio ve SUS bitácoras desde Supabase.
+
+1. hooks/useBitacora.ts:
+   Función getBitacoras():
+     SELECT id, nombre, ruta, unidad, empresa_contratante,
+            estado, created_at, completed_at
+     FROM bitacoras
+     WHERE custodio_id = auth.uid()
+     ORDER BY created_at DESC
+   Retorna array de BitacoraResumen.
+
+2. app/(app)/home.tsx:
+   - Llama getBitacoras() al montar
+   - Muestra lista con ServiceCard por cada bitácora
+   - Filtra por pestañas: Pendientes / Activos / Completados
+   - FAB (+) → navega a bitacora/wizard/step1
+   - Al tocar una tarjeta → navega a custody/details?id={bitacora_id}
+
+3. components/ServiceCard.tsx:
+   - Muestra: nombre, ruta, unidad, empresa, estado (badge de color)
+   - estado 'pendiente'  → badge gris
+   - estado 'activo'     → badge verde
+   - estado 'completado' → badge azul
+
+VERIFICACIÓN: Home muestra bitácoras reales del custodio desde Supabase.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 4 — WIZARD DE CREACIÓN (7 PASOS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Custodio llena el formulario completo y se guarda en Supabase.
+
+STORE: store/useBitacoraStore.ts (Zustand)
+  - Mantiene el estado local del wizard entre pasos
+  - Expone: { formulario, setField, resetFormulario }
+
+PASO 1 — app/(app)/bitacora/wizard/step1.tsx
+  Campos: nombre*, empresaContratante, folioCliente
+          origen: { estado, municipio, personalAsignado }
+          destino: { estado, municipio, personalAsignado }
+  → Siguiente: step2
+
+PASO 2 — step2.tsx
+  Campos: vehiculoCustodia: { placas, color, celular }
+          tiempos.fechaHoraCita
+          tiempos.fechaHoraPresentacion
+          tiempos.odometroInicial
+          reportIntervalMinutes (default: 15)
+  → Siguiente: step3
+
+PASO 3 — step3.tsx
+  Campos: tiempos.fechaHoraSalida, tiempos.fechaHoraVerificacion
+          tiempos.fechaHoraLlegada, tiempos.fechaHoraFin
+          tiempos.odometroFinal, tiempos.kmTotales, tiempos.estadia
+  → Siguiente: step4
+
+PASO 4 — step4.tsx
+  Campos: responsableOrigen: { nombre, firma (SignaturePad) }
+          responsableDestino: { nombre, firma (SignaturePad) }
+  → Siguiente: step5
+
+PASO 5 — step5.tsx
+  Campos: operador1.nombre, operador1.celular
+          operador1.vehiculo: { modelo, color, placas, marca,
+          placaRemolque1, numEco, sellos, ecoTracto,
+          pedimento, placaRemolque2, empresaTransporte }
+          operador1.firma (SignaturePad)
+  → Siguiente: step6
+
+PASO 6 — step6.tsx
+  Opción de agregar Operador 2 (mismos campos que paso 5)
+  Puede omitirse (botón "Omitir")
+  → Siguiente: step7
+
+PASO 7 — step7.tsx (PASO CRÍTICO — guarda en Supabase)
+  Campos: observaciones (texto libre)
+  Al presionar "Crear bitácora":
+    i.  Genera un UUID nuevo para la bitácora
+    ii. Prepara el objeto formulario completo desde el store
+    iii.INSERT en tabla bitacoras:
+        {
+          id: uuid_generado,
+          custodio_id: session.user.id,      ← NUNCA otro valor
+          nombre: formulario.nombre,
+          ruta: `${formulario.origen.municipio} → ${formulario.destino.municipio}`,
+          unidad: formulario.operador1.vehiculo.placas,
+          empresa_contratante: formulario.empresaContratante,
+          estado: 'pendiente',
+          formulario: formulario_completo_json,
+          report_interval_minutes: formulario.reportIntervalMinutes
+        }
+    iv. Si INSERT exitoso → resetFormulario() → navegar a Home
+    v.  Si error → mostrar mensaje de error, NO navegar
+
+VERIFICACIÓN: Bitácora nueva aparece en Home después de completar paso 7.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 5 — FLUJO DE CUSTODIA ACTIVA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Custodio inicia, reporta (foto + GPS) y gestiona el servicio.
+
+1. app/(app)/custody/details.tsx:
+   - Recibe bitacora_id por query params
+   - Muestra resumen de la bitácora (desde Supabase o store)
+   - Botón "Iniciar custodia":
+     → UPDATE bitacoras SET estado='activo', start_time=NOW()
+        WHERE id=bitacora_id AND custodio_id=auth.uid()
+     → Navega a custody/active?id={bitacora_id}
+
+2. app/(app)/custody/active.tsx — EL CORAZÓN DE LA APP:
+
+   A) TIMER (components/TimerBar.tsx):
+      - Cuenta regresiva basada en report_interval_minutes de la bitácora
+      - Al llegar a 0: dispara reportarEvidencia() automáticamente
+      - Reinicia el timer después de cada reporte
+      - Visible como barra de progreso en la parte superior
+
+   B) BOTÓN "REPORTAR AHORA" (manual):
+      - Dispara reportarEvidencia() antes de que termine el timer
+      - Reinicia el timer
+
+   Función reportarEvidencia():
+      i.   Solicitar permiso de cámara (expo-camera) si no lo tiene
+      ii.  Solicitar permiso de ubicación (expo-location) si no lo tiene
+      iii. Capturar foto con expo-camera (modo imagen)
+      iv.  Obtener coordenadas:
+             Location.getCurrentPositionAsync({
+               accuracy: Location.Accuracy.High
+             })
+           → destructurar: { latitude, longitude }
+      v.   Subir foto a Supabase Storage:
+             bucket: 'evidencias'
+             path: '{custodio_id}/{bitacora_id}/{Date.now()}.jpg'
+           → obtener url_imagen (getPublicUrl o signed URL)
+      vi.  INSERT en tabla evidencias:
+             { bitacora_id, custodio_id, url_imagen,
+               latitud: latitude, longitud: longitude,
+               timestamp: new Date().toISOString() }
+      vii. Si INSERT exitoso → llamar a n8nService.reportEvidence()
+
+   C) BOTÓN SOS — rojo, grande, siempre visible:
+      - Al presionar: mostrar diálogo de confirmación "¿Confirmar SOS?"
+      - Si confirma → activarSOS():
+          i.  Obtener coordenadas inmediatamente (Accuracy.High)
+          ii. INSERT en sos_alerts:
+                { custodio_id, bitacora_id, latitud, longitud,
+                  estado: 'activa' }
+          iii.Llamar a n8nService.sendSOS()
+      - Mostrar confirmación "SOS enviado" al usuario
+
+   D) BOTÓN "TERMINAR SERVICIO":
+      - Navega a custody/finish?id={bitacora_id}
+
+3. hooks/useLocation.ts:
+   - Pedir permisos al montar
+   - Exponer getCurrentLocation() → { latitude, longitude }
+   - Usar Location.Accuracy.High siempre
+
+4. hooks/useEvidencias.ts:
+   - uploadFoto(uri, custodioId, bitacoraId) → url_imagen
+   - saveEvidencia(data: Omit<Evidencia, 'id'>) → void
+   - Exponer las evidencias de la bitácora actual
+
+VERIFICACIÓN: Un reporte completo (foto + GPS + insert en BD) funciona.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FASE 6 — CIERRE DEL SERVICIO Y FIRMAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Objetivo: Custodio cierra el servicio con foto final y firmas.
+
+app/(app)/custody/finish.tsx:
+
+1. Toma de foto final (igual que reporte pero marcada como "cierre")
+2. Captura de coordenadas finales
+
+3. FIRMA DEL OPERADOR (components/SignaturePad.tsx):
+   - Canvas táctil donde el operador de la unidad custodiada firma
+   - Genera Base64 data-URL: "data:image/png;base64,..."
+   - Objeto Firma completo:
+     { format: 'data-url', mime: 'image/png', encoding: 'base64',
+       capturedAt: new Date().toISOString(),
+       signerRole: 'operador', signerName: operador1.nombre,
+       data: base64_string }
+
+4. FIRMA DEL CUSTODIO (components/SignaturePad.tsx):
+   - El custodio también firma (conformidad)
+   - Mismo formato de objeto Firma
+
+5. Al presionar "Confirmar cierre":
+   i.  UPDATE bitacoras:
+         SET estado = 'completado',
+             completed_at = NOW(),
+             firma_operador = JSON.stringify(firma_operador),
+             firma_custodio = JSON.stringify(firma_custodio)
+         WHERE id = bitacora_id AND custodio_id = auth.uid()
+   ii. Opcionalmente: subir fotos de firma a Storage bucket 'firmas'
+         path: '{custodio_id}/{bitacora_id}/firma_operador.png'
+   iii.Llamar a n8nService.finishRoute()
+   iv. Navegar a Home (pestaña Historial/Completados)
+
+VERIFICACIÓN: Bitácora aparece en Home con estado 'completado' y firmas.
+
+================================================================
+SECCIÓN 8 — INTEGRACIÓN CON N8N
+================================================================
+
+La app SOLO hace POST a estos endpoints. n8n hace el resto
+(WhatsApp, PDFs, alertas). No construir los workflows de n8n.
+
+Archivo: services/n8nService.ts
+
+Las URLs van en .env:
+  EXPO_PUBLIC_N8N_BASE_URL=https://tu-instancia-n8n.com
+
+FUNCIÓN 1 — reportEvidence():
+  POST /webhook/report-evidence
+  Body: {
+    bitacora_id: string,
+    custodio_id: string,
+    url_imagen: string,
+    latitud: number,
+    longitud: number,
+    timestamp: string
+  }
+  n8n hace: envía foto por WhatsApp
+
+FUNCIÓN 2 — sendSOS():
+  POST /webhook/sos
+  Body: {
+    custodio_id: string,
+    bitacora_id: string,
+    latitud: number,
+    longitud: number,
+    timestamp: string
+  }
+  n8n hace: alerta urgente por WhatsApp con mapa
+
+FUNCIÓN 3 — finishRoute():
+  POST /webhook/finish-route
+  Body: {
+    bitacora_id: string,
+    custodio_id: string,
+    timestamp: string
+  }
+  n8n hace: genera PDF del reporte completo y lo envía
+
+REGLA: Si el POST a n8n falla, NO bloquear la app.
+       Los datos ya están en Supabase. n8n es secundario.
+
+================================================================
+SECCIÓN 9 — .gitignore PROFESIONAL
+================================================================
+
+Crear archivo .gitignore en la raíz con este contenido:
+
+--- INICIO .gitignore ---
+# Dependencias
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Variables de entorno — NUNCA subir a Git
+.env
+.env.local
+.env.development
+.env.production
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+--- FIN .gitignore ---
+
+================================================================
+SECCIÓN 10 — REGLAS CRÍTICAS (el agente NUNCA las ignora)
+================================================================
+
+1. SIEMPRE TypeScript. Nunca .js plano.
+2. custodio_id = auth.uid() SIEMPRE. Sin excepciones.
+3. latitud y longitud son OBLIGATORIAS en evidencias y sos_alerts.
+4. Solicitar permisos (cámara + ubicación) ANTES de usarlos.
+5. Subir foto a Storage PRIMERO. Insertar en evidencias DESPUÉS.
+   Si falla el upload, NO insertar en BD ni llamar a n8n.
+6. Si n8n falla, NO bloquear el flujo. Los datos en Supabase son primarios.
+7. NativeWind para TODOS los estilos. No usar StyleSheet.create.
+8. El botón SOS debe funcionar aunque el timer esté corriendo.
+9. expo-secure-store para tokens de sesión sensibles.
+10. Usar Location.Accuracy.High siempre en expo-location.
+11. Firmas en formato Base64 data-URL con el objeto Firma completo.
+12. El wizard NO guarda en Supabase hasta el paso 7. Antes usa Zustand local.
+13. Probar cada fase en Expo Go antes de avanzar a la siguiente.
+
+================================================================
+SECCIÓN 11 — CÓMO CONTINUAR CON OTRO AGENTE
+================================================================
+
+Si cambias de agente (Claude → Gemini → Cursor), pasa este archivo
+completo y agrega al inicio:
+
+  "Estamos en FASE [número] de la Sección 7.
+   Ya funciona: [describe qué fases están completas].
+   El problema actual es: [describe el error o lo que falta].
+   Continúa desde aquí sin reescribir lo que ya funciona."
+
+ORDEN DE DEPENDENCIAS ENTRE FASES:
+  Fase 1 (Setup)         → base de todo
+  Fase 2 (Auth)          → depende de Fase 1
+  Fase 3 (Home/Lista)    → depende de Fase 2
+  Fase 4 (Wizard)        → depende de Fase 3
+  Fase 5 (Custodia)      → depende de Fase 4 ← la más importante
+  Fase 6 (Cierre/Firmas) → depende de Fase 5
+
+================================================================
+FIN DEL DOCUMENTO — SERVICONS MOBILE / PROYECTO SERVI
+================================================================

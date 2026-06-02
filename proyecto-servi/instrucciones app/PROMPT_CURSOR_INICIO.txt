@@ -1,0 +1,163 @@
+================================================================
+PROMPT PARA CURSOR — INICIO DEL PROYECTO SERVICONS MOBILE
+Pega esto completo en el chat de Cursor antes de empezar
+================================================================
+
+Actúa como un desarrollador senior de React Native con Expo y
+Supabase. Vamos a construir "Servicons Mobile" paso a paso.
+
+ANTES DE ESCRIBIR CÓDIGO:
+Lee el archivo PROYECTO_SERVI_MASTER_V2.txt que está en la raíz
+del proyecto. Ese archivo es tu Single Source of Truth. Todo lo
+que hagas debe ser consistente con él.
+
+================================================================
+LO QUE DEBES HACER AHORA (FASE 1 ÚNICAMENTE)
+================================================================
+
+1. CREAR EL PROYECTO:
+   npx create-expo-app@latest servicons-mobile -t expo-template-blank-typescript
+   cd servicons-mobile
+
+2. INSTALAR DEPENDENCIAS:
+   npx expo install expo-router expo-location expo-camera expo-secure-store
+   npm install @supabase/supabase-js nativewind tailwindcss
+   npm install react-native-url-polyfill @react-native-async-storage/async-storage
+
+3. CREAR LA ESTRUCTURA DE CARPETAS COMPLETA (solo carpetas y
+   archivos vacíos por ahora, sin lógica):
+   app/_layout.tsx
+   app/index.tsx
+   app/auth/login.tsx
+   app/(app)/_layout.tsx
+   app/(app)/home.tsx
+   app/(app)/bitacora/index.tsx
+   app/(app)/bitacora/wizard/step1.tsx
+   app/(app)/bitacora/wizard/step2.tsx
+   app/(app)/bitacora/wizard/step3.tsx
+   app/(app)/bitacora/wizard/step4.tsx
+   app/(app)/bitacora/wizard/step5.tsx
+   app/(app)/bitacora/wizard/step6.tsx
+   app/(app)/bitacora/wizard/step7.tsx
+   app/(app)/custody/details.tsx
+   app/(app)/custody/active.tsx
+   app/(app)/custody/finish.tsx
+   components/SOSButton.tsx
+   components/TimerBar.tsx
+   components/ServiceCard.tsx
+   components/SignaturePad.tsx
+   hooks/useAuth.ts
+   hooks/useBitacora.ts
+   hooks/useEvidencias.ts
+   hooks/useLocation.ts
+   lib/supabaseClient.ts
+   services/n8nService.ts
+   store/useBitacoraStore.ts
+   types/models.ts
+   types/bitacora.ts
+
+4. CREAR lib/supabaseClient.ts con este contenido exacto:
+   import AsyncStorage from '@react-native-async-storage/async-storage'
+   import { createClient } from '@supabase/supabase-js'
+
+   export const supabase = createClient(
+     process.env.EXPO_PUBLIC_SUPABASE_URL!,
+     process.env.EXPO_PUBLIC_SUPABASE_KEY!,
+     {
+       auth: {
+         storage: AsyncStorage,
+         autoRefreshToken: true,
+         persistSession: true,
+         detectSessionInUrl: false,
+       },
+     }
+   )
+
+5. CREAR .env en la raíz:
+   EXPO_PUBLIC_SUPABASE_URL=https://torolfqiwrrhqocguwjg.supabase.co
+   EXPO_PUBLIC_SUPABASE_KEY=sb_publishable_bITKQK4QQrnmGhUHir3XSA_X1MKvagv
+
+6. CONFIGURAR NativeWind:
+   - tailwind.config.js con content apuntando a app/ y components/
+   - babel.config.js con plugin "nativewind/babel"
+
+7. CONFIGURAR app.json CON PERMISOS:
+   iOS:
+     NSLocationWhenInUseUsageDescription
+     NSCameraUsageDescription
+   Android:
+     ACCESS_FINE_LOCATION
+     CAMERA
+
+8. CREAR app/index.tsx — Welcome Screen simple:
+   - Fondo oscuro, logo o nombre "Servicons"
+   - Botón "Iniciar sesión" → navega a /auth/login
+   - Todo con clases NativeWind
+
+9. CREAR app/_layout.tsx — Layout raíz:
+   - Importa el supabaseClient
+   - Escucha supabase.auth.onAuthStateChange
+   - Si hay sesión → router.replace('/(app)/home')
+   - Si no hay sesión → router.replace('/auth/login')
+
+10. CREAR .gitignore profesional:
+    node_modules/, .expo/, .env, .env.local, .DS_Store,
+    dist/, *.log, .idea/, .vscode/
+
+11. CREAR README.md en la raíz con estas secciones:
+    # Servicons Mobile
+    ## Descripción del proyecto
+    ## Requisitos previos
+       - Node.js 18+
+       - Expo CLI (npm install -g expo-cli)
+       - Expo Go instalado en tu celular
+    ## Clonar el repositorio
+       git clone <url-del-repo>
+       cd servicons-mobile
+    ## Instalar dependencias
+       npm install
+    ## Configurar variables de entorno
+       Crear archivo .env en la raíz (NUNCA subir a Git):
+       EXPO_PUBLIC_SUPABASE_URL=...
+       EXPO_PUBLIC_SUPABASE_KEY=...
+    ## Ejecutar el proyecto
+       npx expo start
+       Escanear el QR con Expo Go
+    ## Estructura del proyecto
+       (describe las carpetas del punto 3)
+    ## Fases de desarrollo
+       (resume las 6 fases del PROYECTO_SERVI_MASTER_V2.txt)
+
+================================================================
+REGLAS QUE DEBES SEGUIR SIEMPRE EN ESTE PROYECTO
+================================================================
+
+- SIEMPRE TypeScript. Nunca .js plano.
+- NativeWind para TODOS los estilos. No usar StyleSheet.create.
+- custodio_id = auth.uid() SIEMPRE. Sin excepciones.
+- latitud y longitud OBLIGATORIAS en evidencias y alertas SOS.
+- El wizard NO guarda en Supabase hasta el paso 7.
+- Si n8n falla, NO bloquear el flujo. Supabase es primario.
+- Solicitar permisos ANTES de usar cámara o ubicación.
+- Probar en Expo Go después de cada fase antes de avanzar.
+
+================================================================
+VERIFICACIÓN DE FASE 1
+================================================================
+
+Al terminar la Fase 1, la app debe:
+  ✓ Correr en Expo Go sin errores en consola
+  ✓ Mostrar la Welcome Screen con el botón de login
+  ✓ Tener toda la estructura de carpetas creada
+  ✓ El cliente de Supabase importable sin errores
+  ✓ NativeWind funcionando (prueba una clase como bg-black)
+
+Cuando confirmes que la Fase 1 funciona en Expo Go,
+dime "Fase 1 lista" y pasamos a la Fase 2 (Autenticación).
+
+NO avances a la Fase 2 por tu cuenta.
+Espera mi confirmación de que Expo Go muestra la app.
+
+================================================================
+FIN DEL PROMPT DE INICIO
+================================================================

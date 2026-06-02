@@ -1,0 +1,16 @@
+# Paleta Servicons Mobile — Verde + Naranja
+# Usar en tailwind.config.js → theme.extend.colors.servi
+
+fondo       #0B1F17   — fondo principal (verde oscuro)
+superficie  #143528   — tarjetas, inputs
+primario    #1B7A4E   — verde principal (botones, header)
+primarioOscuro #145A3A — hover / pressed
+acento      #F97316   — naranja (CTA, logo ring, timer)
+acentoClaro #FDBA74   — naranja suave (badges)
+texto       #FFFFFF   — texto principal
+textoSuave  #A7C4B5   — subtítulos, placeholders
+borde       #2D5A45   — bordes
+exito       #22C55E   — estado activo
+pendiente   #64748B   — estado pendiente
+completado  #0EA5E9   — estado completado
+peligro     #DC2626   — SOS y errores

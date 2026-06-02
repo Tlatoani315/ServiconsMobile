@@ -15,7 +15,7 @@ import { AppButton } from '../../../components/AppButton';
 import { DashboardHeader } from '../../../components/DashboardShell';
 import { useAuth } from '../../../hooks/useAuth';
 import { getCreatableRoleOptions, getRoleLabel } from '../../../lib/roles';
-import { createUserAsAdmin, listManagedProfiles } from '../../../services/adminService';
+import { createUserAsAdmin, listManagedProfiles, updateUserAsAdmin } from '../../../services/adminService';
 import type { UserRole } from '../../../types/models';
 
 export default function AdminUsersScreen() {
@@ -39,8 +39,11 @@ export default function AdminUsersScreen() {
       email: string | null;
       role: UserRole;
       empresa: string | null;
+      activo: boolean | null;
     }>
   >([]);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setListLoading(true);
@@ -103,6 +106,51 @@ export default function AdminUsersScreen() {
     resetForm();
     setShowCreateForm(false);
     loadUsers();
+  };
+
+  const handleChangeRole = async (userId: string, newRole: UserRole) => {
+    if (userId === profile?.id) {
+      Alert.alert('Accion no permitida', 'No puedes cambiar tu propio rol.');
+      return;
+    }
+
+    setUpdatingUserId(userId);
+    const { error: updateError } = await updateUserAsAdmin({ userId, role: newRole });
+    setUpdatingUserId(null);
+
+    if (updateError) {
+      Alert.alert('Error', updateError);
+      return;
+    }
+
+    Alert.alert('Rol actualizado', `Nuevo rol: ${getRoleLabel(newRole)}`);
+    setEditingUserId(null);
+    loadUsers();
+  };
+
+  const handleToggleActivo = (userId: string, activo: boolean | null) => {
+    if (userId === profile?.id) {
+      Alert.alert('Accion no permitida', 'No puedes desactivar tu propia cuenta.');
+      return;
+    }
+
+    const next = activo === false;
+    Alert.alert(next ? 'Activar usuario' : 'Desactivar usuario', 'Confirmar cambio?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Confirmar',
+        onPress: async () => {
+          setUpdatingUserId(userId);
+          const { error: updateError } = await updateUserAsAdmin({ userId, activo: next });
+          setUpdatingUserId(null);
+          if (updateError) {
+            Alert.alert('Error', updateError);
+            return;
+          }
+          loadUsers();
+        },
+      },
+    ]);
   };
 
   return (
@@ -194,12 +242,66 @@ export default function AdminUsersScreen() {
                 key={user.id}
                 className="mb-3 rounded-xl border border-servi-borde bg-servi-superficie p-4"
               >
-                <Text className="font-semibold text-servi-texto">{user.nombre}</Text>
-                <Text className="text-sm text-servi-suave">{user.email}</Text>
-                <Text className="mt-1 text-xs text-servi-acento">
-                  {getRoleLabel(user.role)}
-                  {user.empresa ? ` · ${user.empresa}` : ''}
-                </Text>
+                <View className="flex-row items-start justify-between">
+                  <View className="flex-1">
+                    <Text className="font-semibold text-servi-texto">{user.nombre}</Text>
+                    <Text className="text-sm text-servi-suave">{user.email}</Text>
+                    <Text className="mt-1 text-xs text-servi-acento">
+                      {getRoleLabel(user.role)}
+                      {user.empresa ? ` · ${user.empresa}` : ''}
+                    </Text>
+                    {user.activo === false ? (
+                      <Text className="mt-1 text-xs text-servi-peligro">Cuenta desactivada</Text>
+                    ) : null}
+                  </View>
+
+                  {user.role !== 'super_usuario' && user.id !== profile?.id ? (
+                    <Pressable
+                      className="rounded-lg border border-servi-borde px-2 py-1"
+                      onPress={() =>
+                        setEditingUserId((current) => (current === user.id ? null : user.id))
+                      }
+                    >
+                      <Text className="text-xs font-semibold text-servi-acento">Editar</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {editingUserId === user.id ? (
+                  <View className="mt-3 border-t border-servi-borde pt-3">
+                    <Text className="mb-2 text-xs text-servi-suave">Cambiar rol</Text>
+                    <View className="mb-3 flex-row flex-wrap gap-2">
+                      {roleOptions.map((item) => (
+                        <Pressable
+                          key={item.value}
+                          disabled={updatingUserId === user.id}
+                          className={`rounded-lg border px-3 py-2 ${
+                            user.role === item.value
+                              ? 'border-servi-acento bg-servi-acento/20'
+                              : 'border-servi-borde bg-servi-fondo'
+                          }`}
+                          onPress={() => {
+                            if (user.role !== item.value) {
+                              handleChangeRole(user.id, item.value);
+                            }
+                          }}
+                        >
+                          <Text className="text-xs font-semibold text-servi-texto">{item.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+
+                    <Pressable
+                      disabled={updatingUserId === user.id}
+                      className="self-start rounded-lg border border-servi-borde px-3 py-2"
+                      onPress={() => handleToggleActivo(user.id, user.activo)}
+                    >
+                      <Text className="text-xs font-semibold text-servi-texto">
+                        {user.activo === false ? 'Activar cuenta' : 'Desactivar cuenta'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             ))
           )}

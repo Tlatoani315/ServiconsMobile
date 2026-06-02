@@ -1,5 +1,8 @@
 import type { UserRole } from '../types/models';
 
+/** Master Seccion 1: la app operativa es solo custodio -> home */
+export const CUSTODIO_HOME_ROUTE = '/(app)/home';
+
 export const ROLES: { value: UserRole; label: string; description: string }[] = [
   {
     value: 'super_usuario',
@@ -33,7 +36,7 @@ export function getHomeRouteForRole(role: UserRole | null | undefined): string {
     case 'jefe_custodios':
       return '/(app)/admin/home';
     case 'custodio':
-      return '/(app)/home';
+      return CUSTODIO_HOME_ROUTE;
     case 'cliente':
       return '/(app)/cliente/home';
     default:
@@ -80,7 +83,27 @@ export function canCreateBitacora(role: UserRole | null | undefined): boolean {
   return role === 'custodio';
 }
 
+export function getDashboardTitleForRole(role: UserRole | null | undefined): string {
+  switch (role) {
+    case 'super_usuario':
+      return 'Panel de control';
+    case 'jefe_custodios':
+      return 'Supervision de custodias';
+    case 'custodio':
+      return 'Mis servicios';
+    case 'cliente':
+      return 'Portal del cliente';
+    default:
+      return 'Servicons';
+  }
+}
+
+export function getRoleScreenLabel(role: UserRole | null | undefined): string {
+  return getRoleLabel(role);
+}
+
 export function getCreatableRoleOptions(actorRole: UserRole | null | undefined) {
   const allowed = getCreatableRoles(actorRole);
   return ROLES.filter((r) => allowed.includes(r.value));
 }
+

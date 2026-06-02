@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,13 +13,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '../../components/AppButton';
+import { AutofillTextInput, LoginAutofillForm } from '../../components/AutofillTextInput';
 import { FadeInView } from '../../components/FadeInView';
 import { Logo } from '../../components/Logo';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, resetPassword } = useAuth();
+  const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,6 +46,28 @@ export default function LoginScreen() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      setError('Escribe tu correo para enviar el enlace de recuperacion.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const { error: resetError } = await resetPassword(email.trim());
+    setLoading(false);
+
+    if (resetError) {
+      setError(resetError);
+      return;
+    }
+
+    Alert.alert(
+      'Correo enviado',
+      'Revisa tu bandeja de entrada para restablecer tu contrasena.',
+    );
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-servi-fondo" edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -60,56 +85,58 @@ export default function LoginScreen() {
             <Text className="mt-2 text-center text-servi-suave">Accede a Servicons Mobile</Text>
           </FadeInView>
 
-          <FadeInView delay={80}>
-            <Text className="mb-1.5 text-sm text-servi-suave">Correo electronico</Text>
-            <TextInput
-              className="mb-4 rounded-xl border border-servi-borde bg-servi-superficie px-4 py-3.5 text-base text-servi-texto"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="tu@correo.com"
-              placeholderTextColor="#A7C4B5"
-            />
-          </FadeInView>
-
-          <FadeInView delay={140}>
-            <Text className="mb-1.5 text-sm text-servi-suave">Contrasena</Text>
-            <View className="mb-4 flex-row items-center rounded-xl border border-servi-borde bg-servi-superficie">
-              <TextInput
-                className="flex-1 px-4 py-3.5 text-base text-servi-texto"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                placeholder="********"
+          <LoginAutofillForm>
+            <View className="mb-4">
+              <Text className="mb-1.5 text-sm text-servi-suave">Correo electronico</Text>
+              <AutofillTextInput
+                className="rounded-xl border border-servi-borde bg-servi-superficie px-4 py-3.5 text-base text-servi-texto"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="tu@correo.com"
                 placeholderTextColor="#A7C4B5"
+                returnKeyType="next"
+                autoFocus={false}
+                autofillRole="loginIdentifier"
+                nativeID="login-email"
+                onSubmitEditing={() => passwordRef.current?.focus()}
               />
-              <Pressable className="px-4 py-3" onPress={() => setShowPassword((v) => !v)}>
-                <Text className="text-sm text-servi-acento">{showPassword ? 'Ocultar' : 'Ver'}</Text>
-              </Pressable>
             </View>
-          </FadeInView>
+
+            <View className="mb-4">
+              <Text className="mb-1.5 text-sm text-servi-suave">Contrasena</Text>
+              <View className="flex-row items-center rounded-xl border border-servi-borde bg-servi-superficie">
+                <AutofillTextInput
+                  ref={passwordRef}
+                  className="flex-1 px-4 py-3.5 text-base text-servi-texto"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  placeholder="********"
+                  placeholderTextColor="#A7C4B5"
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
+                  autofillRole="password"
+                  nativeID="login-password"
+                />
+                <Pressable
+                  className="px-4 py-3"
+                  onPress={() => setShowPassword((v) => !v)}
+                >
+                  <Text className="text-sm text-servi-acento">{showPassword ? 'Ocultar' : 'Ver'}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </LoginAutofillForm>
 
           {error ? (
             <Text className="mb-4 text-center text-sm text-servi-peligro">{error}</Text>
           ) : null}
 
-          <FadeInView delay={200}>
-            <AppButton label="Iniciar sesion" variant="accent" onPress={handleLogin} loading={loading} />
-          </FadeInView>
+          <AppButton label="Iniciar sesion" variant="accent" onPress={handleLogin} loading={loading} />
 
-          <FadeInView delay={260}>
-            <Pressable
-              className="mt-6 items-center py-2"
-              onPress={() => router.push('/auth/register')}
-            >
-              <Text className="text-servi-suave">
-                No tienes cuenta?{' '}
-                <Text className="font-semibold text-servi-acento">Registrate</Text>
-              </Text>
-            </Pressable>
-          </FadeInView>
+          <Pressable className="mt-3 items-center py-2" onPress={handleForgotPassword}>
+            <Text className="text-sm text-servi-acento">Olvidaste tu contrasena?</Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

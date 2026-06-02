@@ -23,6 +23,7 @@ function RootNavigator() {
     const inApp = segment === '(app)';
     const inAuth = segment === 'auth';
     const onRegister = routePath.includes('register');
+    const onWelcome = segment === '' || segment === 'index';
 
     if (!session && inApp) {
       router.replace('/auth/login');
@@ -32,7 +33,7 @@ function RootNavigator() {
     if (session && profile && !onRegister) {
       const homeRoute = getHomeRouteForRole(profile.role);
 
-      if (inAuth || segment === '' || segment === 'index') {
+      if (inAuth || onWelcome) {
         router.replace(homeRoute);
         return;
       }

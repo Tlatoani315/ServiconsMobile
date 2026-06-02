@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 
 import { WizardField } from '../../../../components/WizardField';
 import { WizardShell } from '../../../../components/WizardShell';
+import { ChannelPicker } from '../../../../components/ChannelPicker';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
 
 export default function WizardStep1() {
@@ -14,13 +15,17 @@ export default function WizardStep1() {
       Alert.alert('Campo requerido', 'El nombre del servicio es obligatorio.');
       return;
     }
+    if (!formulario.whatsappGrupo?.remoteJid) {
+      Alert.alert('Grupo requerido', 'Selecciona el grupo de WhatsApp del cliente.');
+      return;
+    }
     router.push('/(app)/bitacora/wizard/step2');
   };
 
   return (
     <WizardShell title="Datos generales" step={1} onNext={next}>
       <WizardField
-        label="Nombre del servicio"
+        label="Nombre del servicio *"
         value={formulario.nombre}
         onChangeText={(v) => updateFormulario({ nombre: v })}
         required
@@ -35,6 +40,12 @@ export default function WizardStep1() {
         value={formulario.folioCliente}
         onChangeText={(v) => updateFormulario({ folioCliente: v })}
       />
+
+      <ChannelPicker
+        value={formulario.whatsappGrupo ?? null}
+        onChange={(whatsappGrupo) => updateFormulario({ whatsappGrupo })}
+      />
+
       <WizardField
         label="Origen — Estado"
         value={formulario.origen.estado}
@@ -50,6 +61,14 @@ export default function WizardStep1() {
         }
       />
       <WizardField
+        label="Origen — Personal asignado"
+        value={formulario.origen.personalAsignado}
+        onChangeText={(v) =>
+          updateFormulario({ origen: { ...formulario.origen, personalAsignado: v } })
+        }
+      />
+
+      <WizardField
         label="Destino — Estado"
         value={formulario.destino.estado}
         onChangeText={(v) =>
@@ -61,6 +80,13 @@ export default function WizardStep1() {
         value={formulario.destino.municipio}
         onChangeText={(v) =>
           updateFormulario({ destino: { ...formulario.destino, municipio: v } })
+        }
+      />
+      <WizardField
+        label="Destino — Personal asignado"
+        value={formulario.destino.personalAsignado}
+        onChangeText={(v) =>
+          updateFormulario({ destino: { ...formulario.destino, personalAsignado: v } })
         }
       />
     </WizardShell>

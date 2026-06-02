@@ -4,43 +4,56 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ConfirmFinishModal } from '../../../components/ConfirmFinishModal';
+import { CircularTimer } from '../../../components/CircularTimer';
+import { LocationDisplay } from '../../../components/LocationDisplay';
+import { ReportStatusBar, type ReportSyncStatus } from '../../../components/ReportStatusBar';
 import { SOSButton } from '../../../components/SOSButton';
-import { TimerBar } from '../../../components/TimerBar';
 import { useAuth } from '../../../hooks/useAuth';
-import { useBitacora } from '../../../hooks/useBitacora';
+import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useEvidencias } from '../../../hooks/useEvidencias';
 import { useLocation } from '../../../hooks/useLocation';
+import { usePermissions } from '../../../hooks/usePermissions';
 import { supabase } from '../../../lib/supabaseClient';
-import * as n8nService from '../../../services/n8nService';
-import type { BitacoraResumen } from '../../../types/models';
+import { reportEvidence, triggerSOS, type N8nChannel } from '../../../services/n8nService';
 
 export default function CustodyActiveScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const userId = session?.user?.id;
-  const { getBitacoraById } = useBitacora();
+  const { getBitacoraDetalle } = useBitacora();
   const { getCurrentLocation } = useLocation();
-  const { uploadFoto, saveEvidencia } = useEvidencias();
-  const [bitacora, setBitacora] = useState<BitacoraResumen | null>(null);
+  const { ensureFieldPermissions } = usePermissions();
+  const { uploadFoto, saveEvidencia, getEvidencias } = useEvidencias();
+  const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
+  const [evidenciasCount, setEvidenciasCount] = useState(0);
   const [reporting, setReporting] = useState(false);
   const [timerKey, setTimerKey] = useState(0);
+  const [locationKey, setLocationKey] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<ReportSyncStatus>('ok');
+  const [finishModal, setFinishModal] = useState(false);
 
   useEffect(() => {
-    if (id) getBitacoraById(id).then(setBitacora);
-  }, [id, getBitacoraById]);
+    if (!id) return;
+    getBitacoraDetalle(id).then(setBitacora);
+    getEvidencias(id).then((rows) => setEvidenciasCount(rows.length));
+  }, [id, getBitacoraDetalle, getEvidencias]);
+
+  const getContactos = (): N8nChannel[] => {
+    const grupo = bitacora?.formulario?.whatsappGrupo;
+    return grupo ? [grupo] : [];
+  };
 
   const reportarEvidencia = useCallback(async () => {
     if (!id || !userId || reporting) return;
 
+    const permitted = await ensureFieldPermissions();
+    if (!permitted) return;
+
     setReporting(true);
 
     try {
-      const { status: camStatus } = await ImagePicker.requestCameraPermissionsAsync();
-      if (camStatus !== 'granted') {
-        throw new Error('Permiso de cámara denegado');
-      }
-
       const photo = await ImagePicker.launchCameraAsync({
         quality: 0.7,
         base64: false,
@@ -51,8 +64,9 @@ export default function CustodyActiveScreen() {
         return;
       }
 
+      const photoUri = photo.assets[0].uri;
       const { latitude, longitude } = await getCurrentLocation();
-      const urlImagen = await uploadFoto(photo.assets[0].uri, userId, id);
+      const urlImagen = await uploadFoto(photoUri, userId, id);
 
       if (!urlImagen) {
         throw new Error('No se pudo subir la foto a Storage');
@@ -66,28 +80,56 @@ export default function CustodyActiveScreen() {
         longitud: longitude,
       });
 
-      if (!saved) throw new Error('No se guardó la evidencia');
+      if (!saved) throw new Error('No se guardo la evidencia');
 
-      await n8nService.reportEvidence({
-        bitacora_id: id,
-        custodio_id: userId,
-        url_imagen: urlImagen,
-        latitud: latitude,
-        longitud: longitude,
-        timestamp: new Date().toISOString(),
-      });
+      const n8nResult = await reportEvidence(
+        {
+          bitacora_id: id,
+          custodio_id: userId,
+          latitud: latitude,
+          longitud: longitude,
+          custodio: profile?.nombre ?? 'Custodio',
+          estatus: 'en_ruta',
+          contactos: getContactos(),
+        },
+        photoUri,
+      );
 
       setTimerKey((k) => k + 1);
-      Alert.alert('Reporte enviado', 'Evidencia registrada correctamente.');
+      setLocationKey((k) => k + 1);
+      getEvidencias(id).then((rows) => setEvidenciasCount(rows.length));
+
+      Alert.alert(
+        n8nResult.success ? 'Reporte enviado' : 'Reporte guardado',
+        n8nResult.success
+          ? 'Foto + GPS en mapa y Supabase. WhatsApp via n8n.'
+          : `Guardado en Supabase. n8n: ${n8nResult.error ?? 'sin respuesta'}.`,
+      );
+      setSyncStatus(n8nResult.success ? 'ok' : 'error');
     } catch (e) {
+      setSyncStatus('error');
       Alert.alert('Error', e instanceof Error ? e.message : 'Error al reportar');
     } finally {
       setReporting(false);
     }
-  }, [id, userId, reporting, getCurrentLocation, uploadFoto, saveEvidencia]);
+  }, [
+    id,
+    userId,
+    reporting,
+    ensureFieldPermissions,
+    getCurrentLocation,
+    uploadFoto,
+    saveEvidencia,
+    getEvidencias,
+    profile?.nombre,
+    bitacora?.formulario?.whatsappGrupo,
+  ]);
 
   const activarSOS = async () => {
     if (!id || !userId) return;
+
+    const permitted = await ensureFieldPermissions();
+    if (!permitted) return;
 
     try {
       const { latitude, longitude } = await getCurrentLocation();
@@ -102,55 +144,121 @@ export default function CustodyActiveScreen() {
 
       if (error) throw error;
 
-      await n8nService.sendSOS({
+      const n8nResult = await triggerSOS({
         custodio_id: userId,
+        custodio_nombre: profile?.nombre ?? 'Custodio',
         bitacora_id: id,
         latitud: latitude,
         longitud: longitude,
         timestamp: new Date().toISOString(),
+        contactos_emergencia: getContactos(),
       });
 
-      Alert.alert('SOS enviado', 'La alerta de emergencia fue registrada.');
+      Alert.alert(
+        'SOS enviado',
+        n8nResult.success
+          ? 'Ayuda en camino. Ubicacion GPS compartida con administradores.'
+          : `Alerta registrada. n8n: ${n8nResult.error ?? 'sin respuesta'}.`,
+      );
     } catch (e) {
       Alert.alert('Error SOS', e instanceof Error ? e.message : 'No se pudo enviar SOS');
     }
   };
 
   const interval = bitacora?.report_interval_minutes ?? 15;
+  const startLabel = bitacora?.start_time
+    ? new Date(bitacora.start_time).toLocaleString()
+    : '—';
 
   return (
     <SafeAreaView className="flex-1 bg-servi-fondo">
-      <ScrollView className="flex-1 px-4">
-        <Text className="mb-2 py-4 text-2xl font-bold text-servi-texto">Servicio en curso</Text>
-        <Text className="mb-4 text-servi-suave">{bitacora?.nombre}</Text>
+      <View className="bg-emerald-800 px-4 py-3">
+        <Text className="text-[10px] uppercase text-emerald-200">Custodio · Monitoreo</Text>
+        <Text className="text-lg font-bold text-white">{bitacora?.nombre}</Text>
+      </View>
 
-        <TimerBar
+      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 100 }}>
+        <ReportStatusBar status={syncStatus} />
+
+        <CircularTimer
           intervalMinutes={interval}
           onExpire={reportarEvidencia}
+          onPress={reportarEvidencia}
           resetKey={timerKey}
         />
 
+        <Text className="mb-2 text-center text-sm text-servi-suave">
+          Custodia: {bitacora?.unidad ?? bitacora?.nombre}
+        </Text>
+
+        <LocationDisplay refreshKey={locationKey} label="Mapa GPS en tiempo real" />
+
+        <View className="mb-4 flex-row gap-3">
+          <StatBox label="Reportes" value={String(evidenciasCount)} accent />
+          <StatBox label="Inicio" value={startLabel.split(',')[1]?.trim() ?? '—'} />
+        </View>
+
         <Pressable
-          className="mb-4 items-center rounded-xl bg-servi-primario py-4 active:opacity-90"
+          className="mb-4 items-center rounded-2xl bg-emerald-600 py-4 active:opacity-90"
           onPress={reportarEvidencia}
           disabled={reporting}
         >
           {reporting ? (
             <ActivityIndicator color="#FFF" />
           ) : (
-            <Text className="font-semibold text-servi-texto">Reportar ahora</Text>
+            <Text className="text-lg font-bold text-white">Reportar ahora (camara)</Text>
           )}
         </Pressable>
-
-        <SOSButton onConfirm={activarSOS} disabled={reporting} />
-
-        <Pressable
-          className="mb-8 items-center rounded-xl border border-servi-borde py-4"
-          onPress={() => router.push({ pathname: '/(app)/custody/finish', params: { id } })}
-        >
-          <Text className="font-semibold text-servi-texto">Terminar servicio</Text>
-        </Pressable>
       </ScrollView>
+
+      <View className="absolute bottom-0 left-0 right-0 flex-row items-center justify-between border-t border-servi-borde bg-servi-fondo/95 px-4 py-3">
+        <SOSButton onConfirm={activarSOS} disabled={reporting} />
+        <Pressable
+          className="rounded-2xl bg-slate-700 px-6 py-4 active:opacity-90"
+          onPress={() => setFinishModal(true)}
+        >
+          <Text className="font-bold text-white">Terminar</Text>
+        </Pressable>
+      </View>
+
+      <ConfirmFinishModal
+        visible={finishModal}
+        serviceName={bitacora?.nombre}
+        onCancel={() => setFinishModal(false)}
+        onConfirm={() => {
+          setFinishModal(false);
+          router.push({ pathname: '/(app)/custody/finish', params: { id } });
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+function StatBox({
+  label,
+  value,
+  accent,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <View
+      className={`flex-1 rounded-2xl border px-3 py-3 ${
+        highlight
+          ? 'border-emerald-500/50 bg-emerald-500/10'
+          : 'border-servi-borde bg-servi-superficie'
+      }`}
+    >
+      <Text className="text-[10px] uppercase text-servi-suave">{label}</Text>
+      <Text
+        className={`text-lg font-bold ${accent ? 'text-servi-acento' : highlight ? 'text-emerald-400' : 'text-servi-texto'}`}
+      >
+        {value}
+      </Text>
+    </View>
   );
 }

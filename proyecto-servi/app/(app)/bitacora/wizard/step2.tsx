@@ -38,6 +38,13 @@ export default function WizardStep2() {
         }
       />
       <WizardField
+        label="Fecha/hora presentacion"
+        value={formulario.tiempos.fechaHoraPresentacion ?? ''}
+        onChangeText={(v) =>
+          updateFormulario({ tiempos: { ...formulario.tiempos, fechaHoraPresentacion: v } })
+        }
+      />
+      <WizardField
         label="Fecha/hora cita"
         value={formulario.tiempos.fechaHoraCita}
         onChangeText={(v) =>

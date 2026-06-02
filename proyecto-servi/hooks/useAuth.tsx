@@ -35,6 +35,7 @@ type AuthContextValue = {
     celular?: string | null;
     empresa?: string | null;
   }) => Promise<{ error: string | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -160,9 +161,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [session?.user, loadProfile],
   );
 
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    if (error) return { error: error.message };
+    return { error: null };
+  }, []);
+
   const value = useMemo(
-    () => ({ session, profile, loading, signIn, signUp, signOut, updateProfile }),
-    [session, profile, loading, signIn, signUp, signOut, updateProfile],
+    () => ({ session, profile, loading, signIn, signUp, signOut, updateProfile, resetPassword }),
+    [session, profile, loading, signIn, signUp, signOut, updateProfile, resetPassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

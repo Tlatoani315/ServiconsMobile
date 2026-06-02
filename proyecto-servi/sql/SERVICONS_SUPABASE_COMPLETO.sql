@@ -35,7 +35,12 @@ DROP POLICY IF EXISTS "admin_jefe_lectura" ON public.bitacoras;
 DROP POLICY IF EXISTS "cliente_ve_empresa" ON public.bitacoras;
 DROP POLICY IF EXISTS "dueno_bitacora" ON public.bitacoras;
 DROP POLICY IF EXISTS "admin_lee_profiles" ON public.profiles;
+DROP POLICY IF EXISTS "admin_actualiza_profiles" ON public.profiles;
 DROP POLICY IF EXISTS "usuario_propio" ON public.profiles;
+DROP POLICY IF EXISTS "cliente_evidencias_lectura" ON public.evidencias;
+DROP POLICY IF EXISTS "admin_jefe_evidencias_lectura" ON public.evidencias;
+DROP POLICY IF EXISTS "admin_jefe_storage_evidencias" ON storage.objects;
+DROP POLICY IF EXISTS "admin_jefe_storage_firmas" ON storage.objects;
 
 DROP TABLE IF EXISTS public.sos_alerts CASCADE;
 DROP TABLE IF EXISTS public.evidencias CASCADE;
@@ -90,6 +95,11 @@ $$;
 CREATE POLICY "admin_lee_profiles" ON public.profiles
   FOR SELECT
   USING (public.is_admin_or_jefe());
+
+CREATE POLICY "admin_actualiza_profiles" ON public.profiles
+  FOR UPDATE
+  USING (public.is_admin_or_jefe())
+  WITH CHECK (public.is_admin_or_jefe());
 
 -- Valida jerarquia de creacion de roles (usada por Edge Function)
 CREATE OR REPLACE FUNCTION public.can_assign_role(actor_role TEXT, target_role TEXT)
@@ -232,6 +242,23 @@ CREATE POLICY "dueno_evidencias" ON public.evidencias
   USING (custodio_id = auth.uid())
   WITH CHECK (custodio_id = auth.uid());
 
+CREATE POLICY "admin_jefe_evidencias_lectura" ON public.evidencias
+  FOR SELECT
+  USING (public.is_admin_or_jefe());
+
+CREATE POLICY "cliente_evidencias_lectura" ON public.evidencias
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.bitacoras b
+      JOIN public.profiles p ON p.id = auth.uid()
+      WHERE b.id = evidencias.bitacora_id
+        AND p.role = 'cliente'
+        AND p.empresa IS NOT NULL
+        AND p.empresa = b.empresa_contratante
+    )
+  );
+
 -- -----------------------------------------------------------------------------
 -- 4. SOS ALERTS
 -- -----------------------------------------------------------------------------
@@ -315,6 +342,20 @@ CREATE POLICY "custodio_firmas_read" ON storage.objects
   USING (
     bucket_id = 'firmas'
     AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "admin_jefe_storage_evidencias" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'evidencias'
+    AND public.is_admin_or_jefe()
+  );
+
+CREATE POLICY "admin_jefe_storage_firmas" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'firmas'
+    AND public.is_admin_or_jefe()
   );
 
 -- -----------------------------------------------------------------------------

@@ -74,6 +74,7 @@ export interface BitacoraFormulario {
   operador2?: OperadorCustodiado;
   observaciones: string;
   reportIntervalMinutes?: number;
+  whatsappGrupo?: { remoteJid: string; pushName: string } | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, Text, View, type TextInputProps } from 'react-native';
 import Animated, {
   Easing,
   interpolateColor,
@@ -10,6 +10,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { type AuthAutofillRole } from '../lib/authAutofill';
+import { AutofillTextInput } from './AutofillTextInput';
 import {
   getPasswordRules,
   getPasswordStrengthFromRules,
@@ -19,6 +21,7 @@ import { ValidationChecklist } from './ValidationChecklist';
 
 type Props = TextInputProps & {
   label: string;
+  autofillRole?: AuthAutofillRole;
   showToggle?: boolean;
   showPasswordRules?: boolean;
   validationRules?: ValidationRule[];
@@ -32,6 +35,7 @@ const AnimatedView = Animated.createAnimatedComponent(View);
 
 export function AuthTextField({
   label,
+  autofillRole,
   showToggle,
   showPasswordRules,
   validationRules,
@@ -45,7 +49,7 @@ export function AuthTextField({
   ...rest
 }: Props) {
   const [focused, setFocused] = useState(false);
-  const [hidden, setHidden] = useState(Boolean(secureTextEntry));
+  const [hidden, setHidden] = useState(showToggle ? true : Boolean(secureTextEntry));
   const focus = useSharedValue(0);
   const entrance = useSharedValue(0);
 
@@ -92,7 +96,7 @@ export function AuthTextField({
         className="flex-row items-center rounded-xl bg-servi-superficie"
         style={containerStyle}
       >
-        <TextInput
+        <AutofillTextInput
           className="flex-1 px-4 py-3.5 text-base text-servi-texto"
           value={value}
           onChangeText={onChangeText}
@@ -100,11 +104,16 @@ export function AuthTextField({
           placeholderTextColor="#A7C4B5"
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          autofillRole={autofillRole}
           {...rest}
         />
 
         {showToggle ? (
-          <Pressable className="px-4 py-3" onPress={() => setHidden((v) => !v)} hitSlop={8}>
+          <Pressable
+            className="px-4 py-3"
+            onPress={() => setHidden((v) => !v)}
+            hitSlop={8}
+          >
             <Ionicons
               name={hidden ? 'eye-off-outline' : 'eye-outline'}
               size={22}

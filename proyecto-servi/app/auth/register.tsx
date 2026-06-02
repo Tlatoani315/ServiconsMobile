@@ -132,6 +132,7 @@ export default function RegisterScreen() {
             value={nombre}
             onChangeText={setNombre}
             placeholder="Ej. Juan Perez"
+            autofillRole="name"
             delay={60}
             validationRules={nombreRules}
             validationTitle="Requisitos del nombre"
@@ -143,10 +144,8 @@ export default function RegisterScreen() {
             label="Correo electronico"
             value={email}
             onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
             placeholder="nombre@empresa.com"
+            autofillRole="email"
             delay={120}
             validationRules={emailRules}
             validationTitle="Requisitos del correo"
@@ -182,6 +181,7 @@ export default function RegisterScreen() {
             value={password}
             onChangeText={setPassword}
             placeholder="Crea una contrasena segura"
+            autofillRole="newPassword"
             showToggle
             showPasswordRules
             showValidation
@@ -193,6 +193,7 @@ export default function RegisterScreen() {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Repite la contrasena"
+            autofillRole="confirmPassword"
             showToggle
             delay={240}
             validationRules={[matchRule]}

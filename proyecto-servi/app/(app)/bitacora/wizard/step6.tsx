@@ -4,7 +4,7 @@ import { WizardShell } from '../../../../components/WizardShell';
 import { useBitacoraStore, createEmptyFormulario } from '../../../../store/useBitacoraStore';
 import type { OperadorCustodiado } from '../../../../types/models';
 
-import { OperadorFields } from './operadorFields';
+import { OperadorFields } from './_operadorFields';
 
 const emptyOperador2 = (): OperadorCustodiado => ({
   ...createEmptyFormulario().operador1,

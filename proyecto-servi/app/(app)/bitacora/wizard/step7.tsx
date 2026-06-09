@@ -8,6 +8,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useBitacora } from '../../../../hooks/useBitacora';
 import { generateUUID } from '../../../../lib/uuid';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
+import { formatContactosLabel } from '../../../../lib/bitacoraContactos';
 
 export default function WizardStep7() {
   const router = useRouter();
@@ -62,6 +63,12 @@ export default function WizardStep7() {
         </Text>
         <Text className="text-sm text-servi-suave">
           Reportes cada {formulario.reportIntervalMinutes ?? 15} min
+        </Text>
+        <Text className="text-sm text-servi-suave">
+          WhatsApp: {formatContactosLabel(formulario.contactos ?? [])}
+          {(formulario.contactos?.length ?? 0) > 0
+            ? ` (${formulario.contactos!.length} destino${formulario.contactos!.length === 1 ? '' : 's'})`
+            : ''}
         </Text>
       </View>
 

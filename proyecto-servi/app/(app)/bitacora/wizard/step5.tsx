@@ -5,7 +5,7 @@ import { WizardShell } from '../../../../components/WizardShell';
 import { useAppToast } from '../../../../hooks/useAppToast';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
 
-import { OperadorFields } from './operadorFields';
+import { OperadorFields } from './_operadorFields';
 
 export default function WizardStep5() {
   const router = useRouter();

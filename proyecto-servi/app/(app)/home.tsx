@@ -91,7 +91,10 @@ export default function HomeScreen() {
   const iniciarCustodia = () => {
     if (!confirmId) return;
     setConfirmId(null);
-    router.push({ pathname: '/(app)/custody/permissions', params: { id: confirmId } });
+    router.push({
+      pathname: '/(app)/custody/permissions',
+      params: { id: confirmId, auto: '1' },
+    });
   };
 
   return (

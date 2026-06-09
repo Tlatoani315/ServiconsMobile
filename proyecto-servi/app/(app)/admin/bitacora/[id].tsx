@@ -12,6 +12,8 @@ import {
 
 import { AppButton } from '../../../../components/AppButton';
 import { DashboardShell } from '../../../../components/DashboardShell';
+import { formatContactosLabel, resolveBitacoraContactos } from '../../../../lib/bitacoraContactos';
+import type { BitacoraFormulario } from '../../../../types/models';
 import {
   getAdminBitacoraFull,
   listAdminBitacoraEvidencias,
@@ -190,8 +192,11 @@ export default function AdminBitacoraDetailScreen() {
               />
               <InfoRow
                 label="WhatsApp"
-                value={String(
-                  (formPreview.whatsappGrupo as { pushName?: string })?.pushName ?? 'Sin grupo',
+                value={formatContactosLabel(
+                  resolveBitacoraContactos(
+                    bitacora.contactos,
+                    formPreview as BitacoraFormulario | null,
+                  ),
                 )}
               />
               <InfoRow

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Linking, Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Pressable, Text, View } from 'react-native';
 
+import { useLocation } from '../hooks/useLocation';
 import {
   buildGoogleMapsUbicacionUrl,
   formatUbicacionAddress,
@@ -15,9 +17,19 @@ type Props = {
   onChange: (next: Ubicacion) => void;
   tone: 'green' | 'red';
   title: string;
+  /** Origen: boton GPS + campos lat/lng. Destino: solo direccion escrita. */
+  showGpsCapture?: boolean;
 };
 
-export function LocationFormSection({ ubicacion, onChange, tone, title }: Props) {
+export function LocationFormSection({
+  ubicacion,
+  onChange,
+  tone,
+  title,
+  showGpsCapture = false,
+}: Props) {
+  const { getCurrentLocation } = useLocation();
+  const [gpsLoading, setGpsLoading] = useState(false);
   const patch = (partial: Partial<Ubicacion>) => onChange({ ...ubicacion, ...partial });
   const addressPreview = formatUbicacionAddress(ubicacion);
   const canPreview = hasUbicacionAddress(ubicacion) || hasUbicacionCoords(ubicacion);
@@ -27,8 +39,47 @@ export function LocationFormSection({ ubicacion, onChange, tone, title }: Props)
     void Linking.openURL(url);
   };
 
+  const captureGps = async () => {
+    setGpsLoading(true);
+    try {
+      const { latitude, longitude } = await getCurrentLocation();
+      patch({
+        lat: latitude.toFixed(6),
+        lng: longitude.toFixed(6),
+      });
+    } catch (e) {
+      Alert.alert(
+        'GPS no disponible',
+        e instanceof Error ? e.message : 'Activa ubicacion e intenta de nuevo.',
+      );
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
   return (
     <View>
+      {showGpsCapture ? (
+        <Pressable
+          className={`mb-4 flex-row items-center justify-center gap-2 rounded-2xl border px-4 py-3 active:opacity-90 ${
+            tone === 'green'
+              ? 'border-emerald-500/40 bg-emerald-500/10'
+              : 'border-red-500/40 bg-red-500/10'
+          }`}
+          onPress={captureGps}
+          disabled={gpsLoading}
+        >
+          {gpsLoading ? (
+            <ActivityIndicator color="#F97316" />
+          ) : (
+            <Ionicons name="locate" size={20} color="#22C55E" />
+          )}
+          <Text className="font-semibold text-servi-texto">
+            {gpsLoading ? 'Obteniendo GPS...' : 'Usar mi ubicacion GPS'}
+          </Text>
+        </Pressable>
+      ) : null}
+
       <WizardField
         label="Calle y numero *"
         value={ubicacion.calle ?? ''}
@@ -103,35 +154,21 @@ export function LocationFormSection({ ubicacion, onChange, tone, title }: Props)
         onChangeText={(v) => patch({ personalAsignado: v })}
       />
 
-      <View
-        className={`mb-3 rounded-xl border px-3 py-3 ${
-          tone === 'green' ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10'
-        }`}
-      >
-        <Text className="mb-2 text-xs font-bold uppercase text-servi-suave">
-          Coordenadas GPS (opcional, mas precision)
-        </Text>
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <WizardField
-              label="Latitud"
-              value={ubicacion.lat ?? ''}
-              placeholder="19.432608"
-              onChangeText={(v) => patch({ lat: v })}
-              keyboardType="decimal-pad"
-            />
-          </View>
-          <View className="flex-1">
-            <WizardField
-              label="Longitud"
-              value={ubicacion.lng ?? ''}
-              placeholder="-99.133209"
-              onChangeText={(v) => patch({ lng: v })}
-              keyboardType="decimal-pad"
-            />
-          </View>
+      {showGpsCapture && (ubicacion.lat || ubicacion.lng) ? (
+        <View
+          className={`mb-3 rounded-xl border px-3 py-3 ${
+            tone === 'green' ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10'
+          }`}
+        >
+          <Text className="mb-1 text-xs font-bold uppercase text-servi-suave">Coordenadas capturadas</Text>
+          <Text className="font-mono text-sm text-servi-texto">
+            {ubicacion.lat ?? '—'}, {ubicacion.lng ?? '—'}
+          </Text>
+          <Pressable className="mt-2 self-start active:opacity-70" onPress={() => patch({ lat: '', lng: '' })}>
+            <Text className="text-xs text-servi-acento">Quitar coordenadas</Text>
+          </Pressable>
         </View>
-      </View>
+      ) : null}
 
       {canPreview ? (
         <View className="overflow-hidden rounded-xl border border-[#4285F4]/35 bg-[#4285F4]/8">
@@ -151,7 +188,9 @@ export function LocationFormSection({ ubicacion, onChange, tone, title }: Props)
         </View>
       ) : (
         <Text className="text-xs text-servi-suave">
-          Completa calle, CP, municipio y estado para validar la direccion en Google Maps.
+          {showGpsCapture
+            ? 'Completa la direccion o usa el boton GPS para capturar coordenadas del origen.'
+            : 'Completa calle, CP, municipio y estado del destino.'}
         </Text>
       )}
     </View>

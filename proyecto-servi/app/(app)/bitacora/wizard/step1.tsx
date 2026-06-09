@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 
 import { LocationFormSection } from '../../../../components/LocationFormSection';
+import { ChannelPicker } from '../../../../components/ChannelPicker';
 import { WizardField } from '../../../../components/WizardField';
 import { WizardSectionCard } from '../../../../components/WizardSectionCard';
 import { WizardShell } from '../../../../components/WizardShell';
@@ -11,18 +12,30 @@ import { useBitacoraStore } from '../../../../store/useBitacoraStore';
 function validateUbicacion(
   u: ReturnType<typeof useBitacoraStore.getState>['formulario']['origen'],
   label: string,
+  options?: { allowGps?: boolean },
 ): string | null {
+  const allowGps = options?.allowGps ?? false;
+
   if (!u.estado.trim()) return `Indica el estado de ${label}.`;
   if (!u.municipio.trim()) return `Indica el municipio de ${label}.`;
   if (!u.codigoPostal?.trim()) return `Indica el codigo postal de ${label}.`;
-  if (!u.calle?.trim() && !u.lat?.trim()) {
-    return `${label}: agrega calle y numero o coordenadas GPS.`;
+
+  if (allowGps) {
+    if (!u.calle?.trim() && !u.lat?.trim()) {
+      return `${label}: agrega calle y numero o usa el boton GPS.`;
+    }
+    if (u.lat?.trim() && !u.lng?.trim()) return `${label}: falta la longitud GPS.`;
+    if (u.lng?.trim() && !u.lat?.trim()) return `${label}: falta la latitud GPS.`;
+    if (!hasUbicacionAddress(u) && !(u.lat?.trim() && u.lng?.trim())) {
+      return `${label}: completa la direccion o captura GPS.`;
+    }
+  } else {
+    if (!u.calle?.trim()) return `${label}: indica calle y numero.`;
+    if (!hasUbicacionAddress(u)) {
+      return `${label}: completa la direccion (calle, CP, municipio, estado).`;
+    }
   }
-  if (u.lat?.trim() && !u.lng?.trim()) return `${label}: falta la longitud GPS.`;
-  if (u.lng?.trim() && !u.lat?.trim()) return `${label}: falta la latitud GPS.`;
-  if (!hasUbicacionAddress(u) && !(u.lat?.trim() && u.lng?.trim())) {
-    return `${label}: completa la direccion para Google Maps.`;
-  }
+
   return null;
 }
 
@@ -41,7 +54,7 @@ export default function WizardStep1() {
       return;
     }
 
-    const origenErr = validateUbicacion(formulario.origen, 'Origen');
+    const origenErr = validateUbicacion(formulario.origen, 'Origen', { allowGps: true });
     if (origenErr) {
       toast.warning('Origen incompleto', origenErr);
       return;
@@ -89,6 +102,10 @@ export default function WizardStep1() {
           onChangeText={(v) => updateFormulario({ folioCliente: v })}
           placeholder="Referencia interna del cliente"
         />
+        <ChannelPicker
+          value={formulario.contactos ?? []}
+          onChange={(contactos) => updateFormulario({ contactos })}
+        />
       </WizardSectionCard>
 
       <WizardSectionCard
@@ -100,6 +117,7 @@ export default function WizardStep1() {
         <LocationFormSection
           title="Origen"
           tone="green"
+          showGpsCapture
           ubicacion={formulario.origen}
           onChange={(origen) => updateFormulario({ origen })}
         />

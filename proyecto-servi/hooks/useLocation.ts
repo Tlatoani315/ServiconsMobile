@@ -17,15 +17,26 @@ export function useLocation() {
       throw new Error('Permiso de ubicación denegado');
     }
 
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
+    const lastKnown = await Location.getLastKnownPositionAsync();
+    const position = await Promise.race([
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      }),
+      new Promise<Location.LocationObject | null>((resolve) => {
+        setTimeout(() => resolve(null), 15_000);
+      }),
+    ]);
+
+    const resolved = position ?? lastKnown;
+    if (!resolved) {
+      throw new Error('No se pudo obtener la ubicacion GPS. Activa el GPS e intenta de nuevo.');
+    }
 
     return {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
-      accuracy: position.coords.accuracy ?? null,
-      altitude: position.coords.altitude ?? null,
+      latitude: resolved.coords.latitude,
+      longitude: resolved.coords.longitude,
+      accuracy: resolved.coords.accuracy ?? null,
+      altitude: resolved.coords.altitude ?? null,
     };
   }, []);
 

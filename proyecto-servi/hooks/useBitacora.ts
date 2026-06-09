@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import { supabase } from '../lib/supabaseClient';
+import { contactosFromFormulario } from '../lib/bitacoraContactos';
 import { formatUbicacionShort } from '../lib/ubicacionAddress';
 import type { BitacoraFormulario, BitacoraResumen } from '../types/models';
 
@@ -8,6 +9,11 @@ export type BitacoraDetalle = BitacoraResumen & {
   formulario?: BitacoraFormulario | null;
   start_time?: string | null;
 };
+
+const BITACORA_RESUMEN_SELECT =
+  'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, report_interval_minutes, contactos';
+
+const BITACORA_DETALLE_SELECT = `${BITACORA_RESUMEN_SELECT}, formulario, start_time`;
 
 /** Regla de oro del master: custodio_id = auth.uid() */
 async function assertSessionCustodio(custodioId: string): Promise<string | null> {
@@ -45,9 +51,7 @@ export function useBitacora() {
 
     const { data, error: fetchError } = await supabase
       .from('bitacoras')
-      .select(
-        'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, report_interval_minutes',
-      )
+      .select(BITACORA_RESUMEN_SELECT)
       .eq('custodio_id', session.user.id)
       .order('created_at', { ascending: false });
 
@@ -77,9 +81,7 @@ export function useBitacora() {
 
     const { data, error: fetchError } = await supabase
       .from('bitacoras')
-      .select(
-        'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, report_interval_minutes',
-      )
+      .select(BITACORA_RESUMEN_SELECT)
       .order('created_at', { ascending: false });
 
     setLoading(false);
@@ -108,9 +110,7 @@ export function useBitacora() {
   const getBitacoraById = useCallback(async (id: string): Promise<BitacoraResumen | null> => {
     const { data, error: fetchError } = await supabase
       .from('bitacoras')
-      .select(
-        'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, report_interval_minutes',
-      )
+      .select(BITACORA_RESUMEN_SELECT)
       .eq('id', id)
       .single();
 
@@ -125,9 +125,7 @@ export function useBitacora() {
   const getBitacoraDetalle = useCallback(async (id: string): Promise<BitacoraDetalle | null> => {
     const { data, error: fetchError } = await supabase
       .from('bitacoras')
-      .select(
-        'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, report_interval_minutes, formulario, start_time',
-      )
+      .select(BITACORA_DETALLE_SELECT)
       .eq('id', id)
       .single();
 
@@ -153,6 +151,11 @@ export function useBitacora() {
 
       const ruta = `${formatUbicacionShort(formulario.origen)} → ${formatUbicacionShort(formulario.destino)}`;
       const unidad = formulario.operador1?.vehiculo?.placas || formulario.vehiculoCustodia?.placas || '';
+      const contactos = contactosFromFormulario(formulario);
+      const formularioPersistido: BitacoraFormulario = {
+        ...formulario,
+        contactos,
+      };
 
       const { error: insertError } = await supabase.from('bitacoras').insert({
         id: formulario.id,
@@ -162,7 +165,8 @@ export function useBitacora() {
         unidad,
         empresa_contratante: formulario.empresaContratante,
         estado: 'pendiente',
-        formulario,
+        formulario: formularioPersistido,
+        contactos: contactos.length ? contactos : null,
         report_interval_minutes: formulario.reportIntervalMinutes ?? 15,
       });
 

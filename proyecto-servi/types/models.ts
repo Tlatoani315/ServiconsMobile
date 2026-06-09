@@ -67,6 +67,14 @@ export interface Firma {
   data: string;
 }
 
+/** Destinos WhatsApp (n8n / Evolution API) guardados en bitacoras.contactos */
+export type BitacoraContacto = {
+  remoteJid: string;
+  pushName: string;
+};
+
+export type BitacoraContactos = BitacoraContacto[];
+
 export interface BitacoraFormulario {
   id: string;
   nombre: string;
@@ -82,7 +90,10 @@ export interface BitacoraFormulario {
   operador2?: OperadorCustodiado;
   observaciones: string;
   reportIntervalMinutes?: number;
-  whatsappGrupo?: { remoteJid: string; pushName: string } | null;
+  /** Destinos WhatsApp elegidos al crear la bitacora (GET n8n get-channels) */
+  contactos?: BitacoraContactos;
+  /** @deprecated usar contactos — se lee solo en bitacoras antiguas */
+  whatsappGrupo?: BitacoraContacto | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +109,7 @@ export interface BitacoraResumen {
   completed_at?: string | null;
   custodio_id: string;
   report_interval_minutes?: number;
+  contactos?: BitacoraContactos | null;
 }
 
 export interface Evidencia {

@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GoogleMapsActions } from '../../../components/GoogleMapsActions';
+import { InAppCameraModal } from '../../../components/InAppCameraModal';
 import { ReportMapView } from '../../../components/ReportMapView';
 import { SignaturePad } from '../../../components/SignaturePad';
 import { StepProgressBar } from '../../../components/StepProgressBar';
@@ -22,8 +22,9 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useEvidencias } from '../../../hooks/useEvidencias';
 import { useLocation } from '../../../hooks/useLocation';
+import { useRouteReports } from '../../../hooks/useRouteReports';
 import { buildFirmaObject } from '../../../lib/signatures';
-import { buildEvidenceObservaciones, type EvidenceStampMeta } from '../../../lib/evidenceMeta';
+import { deletePersistedPhoto, persistCameraPhoto } from '../../../lib/persistCameraPhoto';
 import { clearLiveLocation } from '../../../services/locationService';
 
 type CloseType = 'acompanamiento' | 'ruta';
@@ -36,7 +37,8 @@ export default function CustodyFinishScreen() {
   const toast = useAppToast();
   const { getBitacoraDetalle, cerrarCustodia } = useBitacora();
   const { getCurrentLocation } = useLocation();
-  const { uploadFoto, uploadFirma, saveEvidencia } = useEvidencias();
+  const { sendRouteReport } = useRouteReports();
+  const { uploadFirma } = useEvidencias();
 
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
   const [phase, setPhase] = useState<Phase>('tipo');
@@ -48,6 +50,7 @@ export default function CustodyFinishScreen() {
   const [observaciones, setObservaciones] = useState('');
   const [loading, setLoading] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   useEffect(() => {
     if (id) getBitacoraDetalle(id).then(setBitacora);
@@ -67,22 +70,23 @@ export default function CustodyFinishScreen() {
     return closeType === 'acompanamiento' ? 3 : 4;
   }, [phase, closeType]);
 
-  const tomarFotoFinal = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      toast.warning('Permiso requerido', 'Necesitamos la camara para la foto de cierre.');
-      return;
-    }
+  const tomarFotoFinal = () => {
+    setCameraOpen(true);
+  };
 
-    const photo = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!photo.canceled && photo.assets?.[0]?.uri) {
-      setFotoFinalUri(photo.assets[0].uri);
+  const onFinalPhotoCapture = async (uri: string) => {
+    setCameraOpen(false);
+    try {
+      const localUri = await persistCameraPhoto(uri);
+      setFotoFinalUri(localUri);
       try {
         const { latitude, longitude } = await getCurrentLocation();
         setCloseCoords({ lat: latitude, lng: longitude });
       } catch {
         setCloseCoords(null);
       }
+    } catch (e) {
+      toast.error('Foto', e instanceof Error ? e.message : 'No se pudo guardar la foto.');
     }
   };
 
@@ -113,41 +117,23 @@ export default function CustodyFinishScreen() {
     setLoading(true);
 
     try {
-      const { latitude, longitude } = closeCoords
-        ? { latitude: closeCoords.lat, longitude: closeCoords.lng }
+      const { latitude, longitude, accuracy } = closeCoords
+        ? { latitude: closeCoords.lat, longitude: closeCoords.lng, accuracy: null as number | null }
         : await getCurrentLocation();
 
-      const uploaded = await uploadFoto(fotoFinalUri!, session.user.id, id);
-      if (!uploaded) throw new Error('No se pudo subir la foto final.');
-
-      const obsText =
-        observaciones.trim() ||
-        (closeType === 'acompanamiento' ? 'Cierre por acompanamiento' : 'Cierre de ruta');
-
-      const stampMeta: EvidenceStampMeta = {
-        timestamp: new Date().toISOString(),
-        lat: latitude,
-        lng: longitude,
-        custodioNombre: profile?.nombre ?? 'Custodio',
-        servicioNombre: bitacora?.nombre ?? 'Cierre',
-        empresa: bitacora?.empresa_contratante ?? '',
-        unidad: bitacora?.unidad ?? '',
-        ruta: bitacora?.ruta ?? '',
-        numeroReporte: 0,
-      };
-
-      const fotoGuardada = await saveEvidencia({
-        bitacora_id: id,
-        custodio_id: session.user.id,
-        url_imagen: uploaded.url,
-        storage_path: uploaded.path,
+      const sent = await sendRouteReport({
+        bitacoraId: id,
+        photoUri: fotoFinalUri!,
         latitud: latitude,
         longitud: longitude,
-        observaciones: `${obsText} | ${buildEvidenceObservaciones(stampMeta)}`,
-        metadata: stampMeta,
+        precision_m: accuracy,
+        estatus: 'termino',
+        fallbackUbicacion: bitacora?.formulario?.destino ?? bitacora?.formulario?.origen,
       });
 
-      if (!fotoGuardada) throw new Error('No se registro la evidencia de cierre.');
+      if (!sent.ok) throw new Error(sent.error ?? 'No se pudo enviar la foto final a n8n.');
+
+      await deletePersistedPhoto(fotoFinalUri);
 
       let firmaOperadorJson = '';
       let firmaCustodioJson = '';
@@ -331,6 +317,13 @@ export default function CustodyFinishScreen() {
           </View>
         ) : null}
       </ScrollView>
+
+      <InAppCameraModal
+        visible={cameraOpen}
+        title="Foto final de cierre"
+        onCapture={onFinalPhotoCapture}
+        onClose={() => setCameraOpen(false)}
+      />
     </SafeAreaView>
   );
 }

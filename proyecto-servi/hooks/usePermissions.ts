@@ -1,4 +1,4 @@
-import * as ImagePicker from 'expo-image-picker';
+import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
@@ -19,7 +19,7 @@ export function usePermissions() {
   const refresh = useCallback(async () => {
     setChecking(true);
     const [cam, loc] = await Promise.all([
-      ImagePicker.getCameraPermissionsAsync(),
+      Camera.getCameraPermissionsAsync(),
       Location.getForegroundPermissionsAsync(),
     ]);
     setCamera(cam.granted ? 'granted' : cam.canAskAgain ? 'undetermined' : 'denied');
@@ -32,13 +32,13 @@ export function usePermissions() {
   }, [refresh]);
 
   const requestCamera = useCallback(async (): Promise<boolean> => {
-    const current = await ImagePicker.getCameraPermissionsAsync();
+    const current = await Camera.getCameraPermissionsAsync();
     if (current.granted) {
       setCamera('granted');
       return true;
     }
 
-    const { status, canAskAgain } = await ImagePicker.requestCameraPermissionsAsync();
+    const { status, canAskAgain } = await Camera.requestCameraPermissionsAsync();
     const granted = status === 'granted';
     setCamera(granted ? 'granted' : canAskAgain ? 'undetermined' : 'denied');
 

@@ -1,0 +1,12 @@
+{
+  "name": "servicos-mobile",
+  "private": true,
+  "description": "Wrapper — la app Expo vive en proyecto-servi/",
+  "scripts": {
+    "install:app": "npm install --prefix proyecto-servi",
+    "start": "npm start --prefix proyecto-servi",
+    "android": "npm run android --prefix proyecto-servi",
+    "ios": "npm run ios --prefix proyecto-servi",
+    "web": "npm run web --prefix proyecto-servi"
+  }
+}

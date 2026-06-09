@@ -1,6 +1,6 @@
 import { getGpsFreshness, type GpsFreshness } from '../lib/liveGpsStatus';
 import { supabase } from '../lib/supabaseClient';
-import type { UserRole } from '../types/models';
+import type { BitacoraContactos, UserRole } from '../types/models';
 
 export type AdminDashboardStats = {
   users: {
@@ -579,6 +579,7 @@ export async function updateProfileFieldsAsAdmin(
 export type AdminBitacoraDetail = AdminBitacoraRow & {
   custodio_nombre: string | null;
   formulario: Record<string, unknown> | null;
+  contactos: BitacoraContactos | null;
   report_interval_minutes: number | null;
   start_time: string | null;
   updated_at: string | null;
@@ -593,7 +594,7 @@ export async function getAdminBitacoraFull(bitacoraId: string): Promise<{
   const { data, error } = await supabase
     .from('bitacoras')
     .select(
-      'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, formulario, report_interval_minutes, start_time, updated_at, firma_operador, firma_custodio',
+      'id, nombre, ruta, unidad, empresa_contratante, estado, created_at, completed_at, custodio_id, formulario, contactos, report_interval_minutes, start_time, updated_at, firma_operador, firma_custodio',
     )
     .eq('id', bitacoraId)
     .maybeSingle();
@@ -612,6 +613,7 @@ export async function getAdminBitacoraFull(bitacoraId: string): Promise<{
       ...(data as AdminBitacoraRow),
       custodio_nombre: profile?.nombre ?? null,
       formulario: (data.formulario as Record<string, unknown> | null) ?? null,
+      contactos: (data.contactos as BitacoraContactos | null) ?? null,
       report_interval_minutes: data.report_interval_minutes ?? null,
       start_time: data.start_time ?? null,
       updated_at: data.updated_at ?? null,

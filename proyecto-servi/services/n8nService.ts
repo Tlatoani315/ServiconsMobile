@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { getInfoAsync } from 'expo-file-system/legacy';
 
 /** Base documentada: https://n8n.pymemind.com/webhook/ */
 function resolveWebhookBase(): string {
@@ -45,7 +45,38 @@ function fail<T>(endpoint: string, error: string): N8nResult<T> {
   return { success: false, data: null, error };
 }
 
-/** GET /get-channels — contactos y grupos WhatsApp */
+/** Tipo inferido del remoteJid (Evolution API / WhatsApp) */
+export function getChannelKind(remoteJid: string): 'grupo' | 'contacto' | 'lid' | 'otro' {
+  if (remoteJid.endsWith('@g.us')) return 'grupo';
+  if (remoteJid.endsWith('@lid')) return 'lid';
+  if (remoteJid.endsWith('@s.whatsapp.net')) return 'contacto';
+  return 'otro';
+}
+
+export function getChannelKindLabel(remoteJid: string): string {
+  switch (getChannelKind(remoteJid)) {
+    case 'grupo':
+      return 'Grupo';
+    case 'lid':
+      return 'Contacto';
+    case 'contacto':
+      return 'Contacto';
+    default:
+      return 'Chat';
+  }
+}
+
+/** Excluye chats especiales del sistema (p. ej. 0@s.whatsapp.net) */
+export function filterMessagingChannels(channels: N8nChannel[]): N8nChannel[] {
+  return channels.filter(
+    (c) =>
+      c.remoteJid &&
+      c.remoteJid !== '0@s.whatsapp.net' &&
+      typeof c.pushName === 'string',
+  );
+}
+
+/** GET /get-channels — contactos y grupos WhatsApp (Evolution API) */
 export async function getChannels(): Promise<N8nResult<N8nChannel[]>> {
   const endpoint = 'get-channels';
   const url = webhookUrl(endpoint);
@@ -65,7 +96,9 @@ export async function getChannels(): Promise<N8nResult<N8nChannel[]>> {
       return fail(endpoint, `HTTP ${response.status}: ${raw || 'Error en get-channels'}`);
     }
 
-    const data = Array.isArray(parsed) ? (parsed as N8nChannel[]) : [];
+    const data = filterMessagingChannels(
+      Array.isArray(parsed) ? (parsed as N8nChannel[]) : [],
+    );
     return { success: true, data, error: null };
   } catch (e) {
     return fail(endpoint, e instanceof Error ? e.message : 'Error de red en get-channels');
@@ -112,6 +145,92 @@ export async function startRoute(data: StartRoutePayload): Promise<N8nResult> {
   }
 }
 
+/** POST /report-route — reporte de ruta (foto + GPS). Contactos los resuelve n8n desde bitacoras.contactos */
+export type ReportRoutePayload = {
+  idBitacora: string;
+  latitud: number;
+  longitud: number;
+  direccion: string;
+  estatus: 'inicio' | 'reporte' | 'termino' | string;
+  fecha?: string;
+  hora?: string;
+};
+
+export async function reportRoute(
+  data: ReportRoutePayload,
+  photoUri: string,
+): Promise<N8nResult> {
+  const endpoint = 'report-route';
+  const url = webhookUrl(endpoint);
+  const now = new Date();
+  const fecha = data.fecha ?? now.toISOString().slice(0, 10);
+  const hora =
+    data.hora ??
+    now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  try {
+    const fileInfo = await getInfoAsync(photoUri);
+    if (!fileInfo.exists) {
+      return fail(endpoint, 'No se encontro el archivo de la foto');
+    }
+
+    const formData = new FormData();
+    formData.append('data', {
+      uri: photoUri,
+      name: `reporte_${Date.now()}.jpg`,
+      type: 'image/jpeg',
+    } as unknown as Blob);
+    formData.append('idBitacora', data.idBitacora);
+    formData.append('latitud', String(data.latitud));
+    formData.append('longitud', String(data.longitud));
+    formData.append('direccion', data.direccion);
+    formData.append('fecha', fecha);
+    formData.append('hora', hora);
+    formData.append('estatus', data.estatus);
+
+    log(endpoint, 'request', {
+      method: 'POST',
+      url,
+      idBitacora: data.idBitacora,
+      latitud: data.latitud,
+      longitud: data.longitud,
+      estatus: data.estatus,
+    });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-Webhook-Token': WEBHOOK_TOKEN,
+      },
+      body: formData,
+    });
+
+    const { parsed, raw } = await readResponse(response);
+    log(endpoint, 'response', { status: response.status, body: parsed ?? raw });
+
+    if (!response.ok) {
+      return fail(endpoint, `HTTP ${response.status}: ${raw || 'Error en report-route'}`);
+    }
+
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'success' in parsed &&
+      (parsed as { success?: boolean }).success === false
+    ) {
+      const msg =
+        typeof (parsed as { message?: string }).message === 'string'
+          ? (parsed as { message: string }).message
+          : 'n8n respondio sin exito';
+      return fail(endpoint, msg);
+    }
+
+    return { success: true, data: parsed, error: null };
+  } catch (e) {
+    return fail(endpoint, e instanceof Error ? e.message : 'Error de red en report-route');
+  }
+}
+
 export type ReportEvidencePayload = {
   bitacora_id: string;
   custodio_id: string;
@@ -132,7 +251,7 @@ export async function reportEvidence(
   const now = new Date();
 
   try {
-    const fileInfo = await FileSystem.getInfoAsync(photoUri);
+    const fileInfo = await getInfoAsync(photoUri);
     if (!fileInfo.exists) {
       return fail(endpoint, 'No se encontro el archivo de la foto');
     }

@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfirmFinishModal } from '../../../components/ConfirmFinishModal';
 import { CircularTimer } from '../../../components/CircularTimer';
+import { InAppCameraModal } from '../../../components/InAppCameraModal';
 import { LocationDisplay } from '../../../components/LocationDisplay';
 import { ReportStatusBar, type ReportSyncStatus } from '../../../components/ReportStatusBar';
 import { SOSButton } from '../../../components/SOSButton';
@@ -12,31 +13,30 @@ import { useAppToast } from '../../../hooks/useAppToast';
 import { useAutoRefresh } from '../../../hooks/useAutoRefresh';
 import { useAuth } from '../../../hooks/useAuth';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
-import { useEvidencias } from '../../../hooks/useEvidencias';
 import { useLiveLocationTracker } from '../../../hooks/useLiveLocationTracker';
 import { useLocation } from '../../../hooks/useLocation';
 import { usePermissions } from '../../../hooks/usePermissions';
-import { buildEvidenceObservaciones, type EvidenceStampMeta } from '../../../lib/evidenceMeta';
+import { useRouteReports } from '../../../hooks/useRouteReports';
+import { deletePersistedPhoto, persistCameraPhoto } from '../../../lib/persistCameraPhoto';
 import { supabase } from '../../../lib/supabaseClient';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function CustodyActiveScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { session, profile } = useAuth();
+  const { session } = useAuth();
   const toast = useAppToast();
   const userId = session?.user?.id;
   const { getBitacoraDetalle } = useBitacora();
   const { getCurrentLocation } = useLocation();
   const { ensureFieldPermissions } = usePermissions();
-  const { uploadFoto, saveEvidencia, getEvidencias } = useEvidencias();
+  const { localReportCount, sendRouteReport, syncReportCountFromDb } = useRouteReports();
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
-  const [evidenciasCount, setEvidenciasCount] = useState(0);
   const [reporting, setReporting] = useState(false);
   const [timerKey, setTimerKey] = useState(0);
   const [locationKey, setLocationKey] = useState(0);
   const [syncStatus, setSyncStatus] = useState<ReportSyncStatus>('ok');
   const [finishModal, setFinishModal] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const { lastUploadAt, uploadError, appForeground, isTransmittingLive } = useLiveLocationTracker({
     custodioId: userId,
@@ -47,10 +47,14 @@ export default function CustodyActiveScreen() {
   const reload = useCallback(async () => {
     if (!id) return;
     getBitacoraDetalle(id).then(setBitacora);
-    getEvidencias(id).then((rows) => setEvidenciasCount(rows.length));
-  }, [id, getBitacoraDetalle, getEvidencias]);
+    await syncReportCountFromDb(id);
+  }, [id, getBitacoraDetalle, syncReportCountFromDb]);
 
   useAutoRefresh(reload, 15_000);
+
+  useEffect(() => {
+    if (id) void syncReportCountFromDb(id);
+  }, [id, syncReportCountFromDb]);
 
   const reportarEvidencia = useCallback(async () => {
     if (!id || !userId || reporting) return;
@@ -58,83 +62,64 @@ export default function CustodyActiveScreen() {
     const permitted = await ensureFieldPermissions();
     if (!permitted) return;
 
-    setReporting(true);
+    setCameraOpen(true);
+  }, [id, userId, reporting, ensureFieldPermissions]);
 
-    try {
-      const photo = await ImagePicker.launchCameraAsync({
-        quality: 0.8,
-        base64: false,
-      });
+  const onReportPhotoCapture = useCallback(
+    async (uri: string) => {
+      if (!id || !userId) return;
 
-      if (photo.canceled || !photo.assets?.[0]?.uri) {
+      setCameraOpen(false);
+      setReporting(true);
+
+      let persistedPhotoUri: string | null = null;
+
+      try {
+        persistedPhotoUri = await persistCameraPhoto(uri);
+        const loc = await getCurrentLocation();
+        const nextReportNumber = localReportCount + 1;
+
+        const sent = await sendRouteReport({
+          bitacoraId: id,
+          photoUri: persistedPhotoUri,
+          latitud: loc.latitude,
+          longitud: loc.longitude,
+          precision_m: loc.accuracy ?? null,
+          reportIndex: nextReportNumber,
+          fallbackUbicacion: bitacora?.formulario?.origen,
+        });
+
+        if (!sent.ok) throw new Error(sent.error ?? 'No se pudo enviar el reporte');
+
+        await deletePersistedPhoto(persistedPhotoUri);
+        persistedPhotoUri = null;
+
+        setTimerKey((k) => k + 1);
+        setLocationKey((k) => k + 1);
+        setSyncStatus('ok');
+
+        toast.success(
+          'Reporte enviado',
+          'Foto y GPS enviados por n8n (WhatsApp + registro en servidor).',
+        );
+      } catch (e) {
+        await deletePersistedPhoto(persistedPhotoUri);
+        setSyncStatus('error');
+        toast.error('Error al reportar', e instanceof Error ? e.message : 'Intenta de nuevo.');
+      } finally {
         setReporting(false);
-        return;
       }
-
-      const photoUri = photo.assets[0].uri;
-      const loc = await getCurrentLocation();
-      const nextReportNumber = evidenciasCount + 1;
-
-      const stampMeta: EvidenceStampMeta = {
-        timestamp: new Date().toISOString(),
-        lat: loc.latitude,
-        lng: loc.longitude,
-        precision_m: loc.accuracy ?? null,
-        custodioNombre: profile?.nombre ?? 'Custodio',
-        servicioNombre: bitacora?.nombre ?? 'Servicio',
-        empresa: bitacora?.empresa_contratante ?? profile?.empresa ?? '',
-        unidad: bitacora?.unidad ?? '',
-        ruta: bitacora?.ruta ?? '',
-        numeroReporte: nextReportNumber,
-      };
-
-      const uploaded = await uploadFoto(photoUri, userId, id);
-      if (!uploaded) throw new Error('No se pudo subir la foto a Storage');
-
-      const saved = await saveEvidencia({
-        bitacora_id: id,
-        custodio_id: userId,
-        url_imagen: uploaded.url,
-        storage_path: uploaded.path,
-        latitud: loc.latitude,
-        longitud: loc.longitude,
-        precision_m: loc.accuracy ?? null,
-        observaciones: buildEvidenceObservaciones(stampMeta),
-        metadata: stampMeta,
-      });
-
-      if (!saved) throw new Error('No se guardo la evidencia en la base de datos');
-
-      setTimerKey((k) => k + 1);
-      setLocationKey((k) => k + 1);
-      getEvidencias(id).then((rows) => setEvidenciasCount(rows.length));
-      setSyncStatus('ok');
-
-      toast.success(
-        'Reporte guardado',
-        'Foto y GPS registrados. Admin y cliente ven la ultima ubicacion.',
-      );
-    } catch (e) {
-      setSyncStatus('error');
-      toast.error('Error al reportar', e instanceof Error ? e.message : 'Intenta de nuevo.');
-    } finally {
-      setReporting(false);
-    }
-  }, [
-    id,
-    userId,
-    reporting,
-    ensureFieldPermissions,
-    getCurrentLocation,
-    uploadFoto,
-    saveEvidencia,
-    getEvidencias,
-    profile?.nombre,
-    profile?.empresa,
-    bitacora,
-    evidenciasCount,
-    toast,
-  ]);
+    },
+    [
+      id,
+      userId,
+      getCurrentLocation,
+      sendRouteReport,
+      bitacora,
+      localReportCount,
+      toast,
+    ],
+  );
 
   const activarSOS = async () => {
     if (!id || !userId) return;
@@ -240,7 +225,7 @@ export default function CustodyActiveScreen() {
         </View>
 
         <View className="mb-4 flex-row gap-3">
-          <StatBox label="Reportes" value={String(evidenciasCount)} accent />
+          <StatBox label="Reportes" value={String(localReportCount)} accent />
           <StatBox label="Inicio" value={startLabel.split(',')[1]?.trim() ?? '—'} />
         </View>
 
@@ -252,7 +237,7 @@ export default function CustodyActiveScreen() {
           {reporting ? (
             <ActivityIndicator color="#FFF" />
           ) : (
-            <Text className="text-lg font-bold text-white">Reportar ahora (camara + GPS)</Text>
+            <Text className="text-lg font-bold text-white">Reportar ahora (camara → n8n)</Text>
           )}
         </Pressable>
       </ScrollView>
@@ -275,6 +260,13 @@ export default function CustodyActiveScreen() {
           setFinishModal(false);
           router.push({ pathname: '/(app)/custody/finish', params: { id } });
         }}
+      />
+
+      <InAppCameraModal
+        visible={cameraOpen}
+        title="Evidencia del reporte"
+        onCapture={onReportPhotoCapture}
+        onClose={() => setCameraOpen(false)}
       />
     </SafeAreaView>
   );

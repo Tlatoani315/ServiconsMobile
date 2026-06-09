@@ -1,6 +1,7 @@
 import { Modal, Pressable, Text, View } from 'react-native';
 
 import type { BitacoraDetalle } from '../hooks/useBitacora';
+import { formatContactosLabel, resolveBitacoraContactos } from '../lib/bitacoraContactos';
 
 type Props = {
   visible: boolean;
@@ -14,6 +15,9 @@ type Props = {
 export function CustodyConfirmModal({ visible, bitacora, onCancel, onConfirm, loading }: Props) {
   const operador = bitacora?.formulario?.operador1?.nombre ?? '—';
   const contacto = bitacora?.formulario?.operador1?.celular ?? '—';
+  const whatsapp = formatContactosLabel(
+    resolveBitacoraContactos(bitacora?.contactos, bitacora?.formulario),
+  );
   const cliente = bitacora?.empresa_contratante ?? '—';
 
   return (
@@ -28,7 +32,8 @@ export function CustodyConfirmModal({ visible, bitacora, onCancel, onConfirm, lo
           <View className="gap-3 p-5">
             <Row label="Operador" value={operador} />
             <Row label="Ruta" value={bitacora?.ruta ?? '—'} />
-            <Row label="Contacto" value={contacto} />
+            <Row label="Contacto operador" value={contacto} />
+            <Row label="Contactos WhatsApp" value={whatsapp} />
             <Row label="Cliente" value={cliente} />
             <Row label="Unidad" value={bitacora?.unidad ?? '—'} />
           </View>

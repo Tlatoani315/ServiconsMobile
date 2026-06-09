@@ -1,16 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LocationDisplay } from '../../../components/LocationDisplay';
 import { PermissionsPanel } from '../../../components/PermissionsPanel';
 import { ReportMapView } from '../../../components/ReportMapView';
-import { useAuth } from '../../../hooks/useAuth';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useLocation } from '../../../hooks/useLocation';
-import { upsertLiveLocation } from '../../../services/locationService';
 
 const ESTADO_LABEL: Record<string, string> = {
   pendiente: 'Listo para iniciar',
@@ -22,12 +20,10 @@ const ESTADO_LABEL: Record<string, string> = {
 export default function CustodyDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { session } = useAuth();
-  const { getBitacoraDetalle, iniciarCustodia } = useBitacora();
+  const { getBitacoraDetalle } = useBitacora();
   const { getCurrentLocation } = useLocation();
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
   const [startCoords, setStartCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
@@ -45,36 +41,9 @@ export default function CustodyDetailsScreen() {
       .catch(() => setStartCoords(null));
   }, [getCurrentLocation]);
 
-  const iniciar = async () => {
-    if (!id || !session?.user?.id || !bitacora) return;
-
-    setStarting(true);
-
-    try {
-      const { latitude, longitude, accuracy } = await getCurrentLocation();
-      setStartCoords({ lat: latitude, lng: longitude });
-
-      const ok = await iniciarCustodia(id, session.user.id);
-      if (!ok) {
-        Alert.alert('Error', 'No se pudo activar la bitacora en Supabase.');
-        return;
-      }
-
-      await upsertLiveLocation({
-        custodioId: session.user.id,
-        bitacoraId: id,
-        latitud: latitude,
-        longitud: longitude,
-        precision_m: accuracy ?? null,
-      });
-
-      Alert.alert('Servicio iniciado', 'Custodia activa. GPS guardado en Supabase.');
-      router.replace({ pathname: '/(app)/custody/active', params: { id } });
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo iniciar el servicio.');
-    } finally {
-      setStarting(false);
-    }
+  const irAInicio = () => {
+    if (!id) return;
+    router.push({ pathname: '/(app)/custody/permissions', params: { id } });
   };
 
   if (loading) {
@@ -132,18 +101,13 @@ export default function CustodyDetailsScreen() {
         {bitacora?.estado === 'pendiente' ? (
           <Pressable
             className="mt-2 items-center rounded-2xl bg-emerald-600 py-5 shadow-lg active:opacity-90"
-            onPress={iniciar}
-            disabled={starting}
+            onPress={irAInicio}
           >
-            {starting ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <>
-                <Ionicons name="play-circle" size={28} color="#FFF" />
-                <Text className="mt-1 text-xl font-bold text-white">Iniciar servicio</Text>
-                <Text className="text-xs text-emerald-100">Activa custodia y guarda GPS en Supabase</Text>
-              </>
-            )}
+            <>
+              <Ionicons name="play-circle" size={28} color="#FFF" />
+              <Text className="mt-1 text-xl font-bold text-white">Iniciar servicio</Text>
+              <Text className="text-xs text-emerald-100">Foto inicial + reporte a n8n</Text>
+            </>
           </Pressable>
         ) : bitacora?.estado === 'activo' ? (
           <Pressable

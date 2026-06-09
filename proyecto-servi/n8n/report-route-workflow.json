@@ -1,0 +1,559 @@
+{
+  "name": "Servicons — report-route",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "report-route",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-480, 592],
+      "id": "5ee4a183-3440-40e8-8a35-4902a3d3c24f",
+      "name": "Webhook",
+      "webhookId": "5d561499-210c-4675-99f0-6d76e42e2b44",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SV4N2L59dGXZOk9i",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://res.cloudinary.com/dlbu8hsmt/image/upload/v1780355561/escudo-removebg-preview_ehjqb2.png",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "logo"
+            }
+          }
+        }
+      },
+      "id": "8a1e8a3f-3967-4d37-88df-9a7a3cf2681a",
+      "name": "Obtener Logo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [-256, 688]
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "operation": "get",
+        "tableId": "bitacoras",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).idBitacora }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-256, 496],
+      "id": "d19f6af4-6a44-4b37-b430-3590c6a00441",
+      "name": "Get a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BkTk2dK0VFfBEQPA",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [-32, 592],
+      "id": "305a147c-878a-4b5b-84aa-f9256ce637d7",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('Webhook').first();\nconst bitacoraRow = $('Get a row').first();\nconst logoItem = $('Obtener Logo1').first();\nconst body = webhook.json.body ?? webhook.json;\n\nif (!webhook.binary?.data) {\n  throw new Error('Falta el archivo binario data en el webhook (campo multipart data)');\n}\n\nif (!body.idBitacora) {\n  throw new Error('Falta idBitacora en el webhook');\n}\n\nif (!bitacoraRow?.json?.id) {\n  throw new Error('No se encontro la bitacora en Supabase con id: ' + body.idBitacora);\n}\n\nconst bitacora = bitacoraRow.json;\nconst logoBin = logoItem.binary?.logo ?? logoItem.binary?.data;\nif (!logoBin) {\n  throw new Error('No se pudo obtener el logo');\n}\n\nreturn [{\n  json: {\n    body,\n    ...bitacora,\n    formulario: bitacora.formulario ?? {},\n  },\n  binary: {\n    data: webhook.binary.data,\n    logo: logoBin,\n  },\n}];"
+      },
+      "id": "prep-datos-001",
+      "name": "Preparar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [192, 592]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sharp = require('sharp');\n\nconst items = $input.all();\n\nfor (let i = 0; i < items.length; i++) {\n  try {\n    const item = items[i];\n\n    if (!item.binary?.data) {\n      throw new Error(`No existe binario data. Disponibles: ${Object.keys(item.binary ?? {}).join(', ')}`);\n    }\n    if (!item.binary?.logo) {\n      throw new Error(`No existe binario logo. Disponibles: ${Object.keys(item.binary ?? {}).join(', ')}`);\n    }\n\n    const fotoBuffer = await this.helpers.getBinaryDataBuffer(i, 'data');\n    const logoBuffer = await this.helpers.getBinaryDataBuffer(i, 'logo');\n\n    const body = item.json.body || {};\n    const formulario = item.json.formulario || {};\n\n    const custodio =\n      formulario.responsableOrigen?.nombre ||\n      formulario.operador1?.nombre ||\n      'Custodio';\n    const fecha = body.fecha || '';\n    const hora = body.hora || '';\n    const lat = body.latitud ?? '';\n    const lon = body.longitud ?? '';\n    const estatus = body.estatus || '';\n\n    const svgWidth = 450;\n    const svgHeight = 170;\n\n    const svgText = `\n      <svg width=\"${svgWidth}\" height=\"${svgHeight}\">\n        <style>\n          .text { fill: #ffffff; font-size: 20px; font-family: sans-serif; font-weight: bold; text-anchor: end; }\n          .estatus { fill: #ffcc00; font-size: 28px; font-family: sans-serif; font-weight: bold; text-anchor: end; }\n        </style>\n        <rect x=\"0\" y=\"0\" width=\"${svgWidth}\" height=\"${svgHeight}\" fill=\"rgba(0,0,0,0.6)\" rx=\"8\" />\n        <text x=\"${svgWidth - 20}\" y=\"45\" class=\"estatus\">ESTATUS: ${String(estatus).toUpperCase()}</text>\n        <text x=\"${svgWidth - 20}\" y=\"85\" class=\"text\">Custodio: ${custodio}</text>\n        <text x=\"${svgWidth - 20}\" y=\"115\" class=\"text\">Fecha: ${fecha} - Hora: ${hora}</text>\n        <text x=\"${svgWidth - 20}\" y=\"145\" class=\"text\">Ubicacion: ${lat}, ${lon}</text>\n      </svg>\n    `;\n\n    const textBuffer = Buffer.from(svgText);\n    const resizedLogo = await sharp(logoBuffer).resize({ width: 150, withoutEnlargement: true }).toBuffer();\n\n    const outputBuffer = await sharp(fotoBuffer)\n      .resize({ width: 1024, withoutEnlargement: true })\n      .composite([\n        { input: resizedLogo, gravity: 'northwest' },\n        { input: textBuffer, gravity: 'southeast' },\n      ])\n      .jpeg({ quality: 80 })\n      .toBuffer();\n\n    const base64Image = outputBuffer.toString('base64');\n\n    items[i].json = {\n      ...item.json,\n      imageBase64: base64Image,\n      imageDataUri: `data:image/jpeg;base64,${base64Image}`,\n      mimeType: 'image/jpeg',\n      fileName: `reporte_${body.idBitacora ?? 'ruta'}_${Date.now()}.jpg`,\n    };\n\n    delete items[i].binary;\n  } catch (error) {\n    throw new Error(`Error procesando imagen: ${error.message}`);\n  }\n}\n\nreturn items;"
+      },
+      "id": "601ffa4a-2b3d-487e-9361-e3186fc66fe5",
+      "name": "Procesar Imagen1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [416, 592]
+    },
+    {
+      "parameters": {
+        "jsCode": "const proc = $('Procesar Imagen1').first().json;\nconst bitacora = $('Get a row').first().json;\nconst body = $('Webhook').first().json.body ?? $('Webhook').first().json;\nconst idBitacora = body.idBitacora;\nconst custodioId = bitacora.custodio_id;\n\nif (!custodioId) {\n  throw new Error('La bitacora no tiene custodio_id');\n}\n\nconst storagePath = `${custodioId}/${idBitacora}/${proc.fileName}`;\nconst buffer = Buffer.from(proc.imageBase64, 'base64');\n\nreturn [{\n  json: {\n    ...proc,\n    storagePath,\n    idBitacora,\n    custodioId,\n  },\n  binary: {\n    file: await this.helpers.prepareBinaryData(buffer, proc.fileName, 'image/jpeg'),\n  },\n}];"
+      },
+      "id": "prep-upload-storage-001",
+      "name": "Preparar upload Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [528, 592]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://torolfqiwrrhqocguwjg.supabase.co/storage/v1/object/evidencias/{{ $json.storagePath }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/jpeg"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "3600"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "file",
+        "options": {}
+      },
+      "id": "subir-storage-001",
+      "name": "Subir Supabase Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 592],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Supabase Service Role"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://torolfqiwrrhqocguwjg.supabase.co/storage/v1/object/sign/evidencias/{{ $('Preparar upload Storage').item.json.storagePath }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"expiresIn\": 604800}",
+        "options": {}
+      },
+      "id": "url-firmada-001",
+      "name": "URL imagen firmada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [752, 592],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Supabase Service Role"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Preparar upload Storage').first().json;\nconst signResp = $input.first().json;\nconst BASE_URL = 'https://torolfqiwrrhqocguwjg.supabase.co';\n\nlet url_imagen = signResp.signedUrl || signResp.signedURL || '';\n\nif (url_imagen.startsWith('/')) {\n  url_imagen = `${BASE_URL}/storage/v1${url_imagen}`;\n} else if (url_imagen && !url_imagen.startsWith('http')) {\n  url_imagen = `${BASE_URL}/storage/v1/${url_imagen.replace(/^\\//, '')}`;\n}\n\nif (!url_imagen) {\n  throw new Error('Supabase no devolvio signedURL para la evidencia');\n}\n\nreturn [{\n  json: {\n    ...prep,\n    storagePath: prep.storagePath,\n    url_imagen,\n  },\n}];"
+      },
+      "id": "resolver-url-001",
+      "name": "Resolver URL evidencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [864, 592]
+    },
+    {
+      "parameters": {
+        "jsCode": "const bitacora = $('Get a row').first().json;\nconst webhookBody = $('Webhook').first().json.body || $('Webhook').first().json;\nconst imagen = $('Procesar Imagen1').first().json;\nconst evidencia = $('Resolver URL evidencia').first().json;\n\nconst form = bitacora.formulario || {};\nconst respOrigen = form.responsableOrigen || {};\nconst op1 = form.operador1 || {};\nconst veh = op1.vehiculo || {};\nconst dest = form.destino || {};\n\nlet contactos = bitacora.contactos;\nif (typeof contactos === 'string') {\n  try { contactos = JSON.parse(contactos); } catch { contactos = []; }\n}\nif (!Array.isArray(contactos)) contactos = [];\n\nconst ruta = bitacora.ruta || '';\nconst destinoTxt = dest.municipio || (ruta.includes('→') ? ruta.split('→')[1].trim() : '—');\n\n// Evolution API: media = URL https o base64 puro (NO data URI)\nconst mediaWhatsapp = imagen.imageBase64 || evidencia.url_imagen || '';\n\nreturn [{\n  json: {\n    estado: webhookBody.estatus || '',\n    hora: webhookBody.hora || '',\n    coordenadas: `${webhookBody.latitud || ''}, ${webhookBody.longitud || ''}`,\n    cliente: bitacora.empresa_contratante || '',\n    custodio: respOrigen.nombre || op1.nombre || 'Custodio',\n    destino: destinoTxt,\n    origen: webhookBody.direccion || '',\n    modelo: veh.modelo || '—',\n    color_unidad: veh.color || '—',\n    placas_unidad: bitacora.unidad || veh.placas || '—',\n    nombre_servicio: bitacora.nombre || '',\n    contactos,\n    imagen: mediaWhatsapp,\n    url_imagen: evidencia.url_imagen || '',\n    imageBase64: imagen.imageBase64 || '',\n    idBitacora: webhookBody.idBitacora || '',\n    custodio_id: bitacora.custodio_id || '',\n    storagePath: evidencia.storagePath || '',\n  },\n}];"
+      },
+      "id": "prep-whatsapp-fields-001",
+      "name": "Preparar campos WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [864, 592]
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "operation": "create",
+        "tableId": "evidencias",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "bitacora_id",
+              "fieldValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).idBitacora }}"
+            },
+            {
+              "fieldId": "custodio_id",
+              "fieldValue": "={{ $('Get a row').item.json.custodio_id }}"
+            },
+            {
+              "fieldId": "latitud",
+              "fieldValue": "={{ parseFloat(($('Webhook').item.json.body || $('Webhook').item.json).latitud) }}"
+            },
+            {
+              "fieldId": "longitud",
+              "fieldValue": "={{ parseFloat(($('Webhook').item.json.body || $('Webhook').item.json).longitud) }}"
+            },
+            {
+              "fieldId": "url_imagen",
+              "fieldValue": "={{ $('Resolver URL evidencia').item.json.url_imagen }}"
+            },
+            {
+              "fieldId": "storage_path",
+              "fieldValue": "={{ $('Resolver URL evidencia').item.json.storagePath }}"
+            },
+            {
+              "fieldId": "observaciones",
+              "fieldValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).direccion }} | estatus: {{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ JSON.stringify({ fecha: ($('Webhook').item.json.body || $('Webhook').item.json).fecha, hora: ($('Webhook').item.json.body || $('Webhook').item.json).hora, estatus: ($('Webhook').item.json.body || $('Webhook').item.json).estatus, direccion: ($('Webhook').item.json.body || $('Webhook').item.json).direccion, source: 'n8n-report-route' }) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1100, 592],
+      "id": "91d651e8-6685-4bb1-8470-49ca717b5d4b",
+      "name": "Guardar evidencia",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BkTk2dK0VFfBEQPA",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}",
+              "rightValue": "inicio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1210, 592],
+      "id": "if-inicio-estatus-001",
+      "name": "IF Inicio"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://torolfqiwrrhqocguwjg.supabase.co/rest/v1/bitacoras?id=eq.{{ $('Get a row').item.json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ estado: 'activo', start_time: $now.toISO() }) }}",
+        "options": {}
+      },
+      "id": "activar-bitacora-001",
+      "name": "Activar bitacora",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 480],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Supabase Service Role"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst row = Array.isArray(raw) ? raw[0] : raw;\nif (!row?.id) {\n  throw new Error('No se pudo activar la bitacora en Supabase (PATCH sin filas)');\n}\nreturn [{\n  json: {\n    ...row,\n    bitacora_estado: row.estado || 'activo',\n  },\n}];"
+      },
+      "id": "normalizar-activacion-001",
+      "name": "Normalizar activacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1430, 480]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}",
+                    "rightValue": "inicio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f21be18d-2b7a-4b7d-9d3d-f83fed5f1712"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "36376476-f5d3-4e10-a7b5-0487966828d7",
+                    "leftValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}",
+                    "rightValue": "reporte",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fe2fa356-4d8c-495a-8a8f-2bfb51ee63e1",
+                    "leftValue": "={{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}",
+                    "rightValue": "termino",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [1430, 576],
+      "id": "29f94883-53d7-4ec7-847d-101c7584eb00",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const datos = $('Preparar campos WhatsApp').first().json;\nconst activacion = $('Normalizar activacion').first()?.json ?? {};\nlet contactos = datos.contactos;\nif (typeof contactos === 'string') {\n  try { contactos = JSON.parse(contactos); } catch { contactos = []; }\n}\nif (!Array.isArray(contactos) || contactos.length === 0) {\n  return [];\n}\nconst { contactos: _, ...datosDelServicio } = datos;\nreturn contactos.map((contacto) => ({\n  json: {\n    ...contacto,\n    ...datosDelServicio,\n    captionKind: 'inicio',\n    bitacora_estado: activacion.bitacora_estado || activacion.estado || 'activo',\n    start_time: activacion.start_time || '',\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1536, 400],
+      "id": "1bf7bbeb-06ee-4024-bd0d-15deaaaacac4",
+      "name": "Split contactos inicio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const datos = $('Preparar campos WhatsApp').first().json;\nlet contactos = datos.contactos;\nif (typeof contactos === 'string') {\n  try { contactos = JSON.parse(contactos); } catch { contactos = []; }\n}\nif (!Array.isArray(contactos) || contactos.length === 0) {\n  return [];\n}\nconst { contactos: _, ...datosDelServicio } = datos;\nreturn contactos.map((contacto) => ({\n  json: { ...contacto, ...datosDelServicio, captionKind: 'reporte' },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1536, 592],
+      "id": "297c3c8a-ff2c-4d77-adc4-56d17b797e2f",
+      "name": "Split contactos reporte"
+    },
+    {
+      "parameters": {
+        "jsCode": "const datos = $('Preparar campos WhatsApp').first().json;\nlet contactos = datos.contactos;\nif (typeof contactos === 'string') {\n  try { contactos = JSON.parse(contactos); } catch { contactos = []; }\n}\nif (!Array.isArray(contactos) || contactos.length === 0) {\n  return [];\n}\nconst { contactos: _, ...datosDelServicio } = datos;\nreturn contactos.map((contacto) => ({\n  json: { ...contacto, ...datosDelServicio, captionKind: 'termino' },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1536, 784],
+      "id": "105b7c26-36ba-4e67-85a3-f5c333e09dc3",
+      "name": "Split contactos termino"
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-image",
+        "instanceName": "servicons",
+        "remoteJid": "={{ $json.remoteJid }}",
+        "media": "={{ $json.url_imagen || $json.imageBase64 || $json.imagen }}",
+        "caption": "={{ \n(() => {\n  const hora = parseInt(String($json.hora || '12').split(':')[0], 10);\n  const saludo = hora < 12 ? 'Buenos dias' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';\n  if ($json.captionKind === 'termino') {\n    return `${saludo}\\nTermino de servicio\\n\\nServicio: ${$json.nombre_servicio}\\nCustodio: ${$json.custodio}\\nCoordenadas: ${$json.coordenadas}\\nOrigen: ${$json.origen}\\nDestino: ${$json.destino}\\nHora: ${$json.hora}`;\n  }\n  if ($json.captionKind === 'reporte') {\n    return `${saludo}\\nReporte en ruta\\n\\nServicio: ${$json.nombre_servicio}\\nCoordenadas: ${$json.coordenadas}\\nHora: ${$json.hora}\\nCliente: ${$json.cliente}`;\n  }\n  const inicioHora = $json.start_time ? new Date($json.start_time).toLocaleString('es-MX') : $json.hora;\n  return `${saludo}\\nInicio de servicio\\n\\n✅ MONITOREO ACTIVO en base de datos\\nEstado: ${($json.bitacora_estado || 'activo').toUpperCase()}\\nHora registro: ${inicioHora}\\n\\nServicio: ${$json.nombre_servicio}\\nCustodio: ${$json.custodio}\\nModelo: ${$json.modelo}\\nColor: ${$json.color_unidad}\\nPlacas: ${$json.placas_unidad}\\nCliente: ${$json.cliente}\\nOrigen: ${$json.origen}\\nDestino: ${$json.destino}\\nCoordenadas: ${$json.coordenadas}`;\n})()\n}}",
+        "options_message": {}
+      },
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [1760, 592],
+      "id": "d35b1d13-7e3b-4750-9968-da21ae8331d2",
+      "name": "Enviar WhatsApp",
+      "credentials": {
+        "evolutionApi": {
+          "id": "23EEcSinUs1e5tx2",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"{{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus === 'inicio' ? 'Reporte procesado. Monitoreo activo en base de datos.' : 'Reporte procesado' }}\",\n  \"evidencia_id\": \"{{ $('Guardar evidencia').item.json.id }}\",\n  \"estatus\": \"{{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus }}\",\n  \"bitacora_estado\": \"{{ ($('Webhook').item.json.body || $('Webhook').item.json).estatus === 'inicio' ? ($('Normalizar activacion').item.json.bitacora_estado || 'activo') : $('Get a row').item.json.estado }}\"\n}",
+        "options": {}
+      },
+      "id": "082bbf95-10d4-40b8-80c6-38ea327e8351",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1760, 592]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Obtener Logo1", "type": "main", "index": 0 },
+          { "node": "Get a row", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Obtener Logo1": {
+      "main": [[{ "node": "Merge2", "type": "main", "index": 1 }]]
+    },
+    "Get a row": {
+      "main": [[{ "node": "Merge2", "type": "main", "index": 0 }]]
+    },
+    "Merge2": {
+      "main": [[{ "node": "Preparar Datos", "type": "main", "index": 0 }]]
+    },
+    "Preparar Datos": {
+      "main": [[{ "node": "Procesar Imagen1", "type": "main", "index": 0 }]]
+    },
+    "Procesar Imagen1": {
+      "main": [[{ "node": "Preparar upload Storage", "type": "main", "index": 0 }]]
+    },
+    "Preparar upload Storage": {
+      "main": [[{ "node": "Subir Supabase Storage", "type": "main", "index": 0 }]]
+    },
+    "Subir Supabase Storage": {
+      "main": [[{ "node": "URL imagen firmada", "type": "main", "index": 0 }]]
+    },
+    "URL imagen firmada": {
+      "main": [[{ "node": "Resolver URL evidencia", "type": "main", "index": 0 }]]
+    },
+    "Resolver URL evidencia": {
+      "main": [[{ "node": "Preparar campos WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Preparar campos WhatsApp": {
+      "main": [[{ "node": "Guardar evidencia", "type": "main", "index": 0 }]]
+    },
+    "Guardar evidencia": {
+      "main": [[{ "node": "IF Inicio", "type": "main", "index": 0 }]]
+    },
+    "IF Inicio": {
+      "main": [
+        [{ "node": "Activar bitacora", "type": "main", "index": 0 }],
+        [
+          { "node": "Switch", "type": "main", "index": 0 },
+          { "node": "Respond to Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Activar bitacora": {
+      "main": [[{ "node": "Normalizar activacion", "type": "main", "index": 0 }]]
+    },
+    "Normalizar activacion": {
+      "main": [
+        [
+          { "node": "Switch", "type": "main", "index": 0 },
+          { "node": "Respond to Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "Split contactos inicio", "type": "main", "index": 0 }],
+        [{ "node": "Split contactos reporte", "type": "main", "index": 0 }],
+        [{ "node": "Split contactos termino", "type": "main", "index": 0 }]
+      ]
+    },
+    "Split contactos inicio": {
+      "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Split contactos reporte": {
+      "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Split contactos termino": {
+      "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

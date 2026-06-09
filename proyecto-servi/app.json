@@ -41,6 +41,13 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Necesitamos la camara para las evidencias.",
+          "photosPermission": "Permite acceder a fotos para evidencias del servicio."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Necesitamos la cámara para las evidencias."

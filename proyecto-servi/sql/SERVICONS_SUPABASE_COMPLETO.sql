@@ -244,6 +244,7 @@ CREATE TABLE public.bitacoras (
   firma_operador          TEXT,
   start_time              TIMESTAMPTZ,
   completed_at            TIMESTAMPTZ,
+  contactos               JSONB,
   created_at              TIMESTAMPTZ DEFAULT NOW(),
   updated_at              TIMESTAMPTZ DEFAULT NOW()
 );
@@ -477,6 +478,9 @@ CREATE INDEX idx_bitacoras_custodio_estado
 
 CREATE INDEX idx_bitacoras_empresa
   ON public.bitacoras (empresa_contratante);
+
+CREATE INDEX idx_bitacoras_contactos
+  ON public.bitacoras USING GIN (contactos);
 
 CREATE INDEX idx_profiles_role
   ON public.profiles (role);

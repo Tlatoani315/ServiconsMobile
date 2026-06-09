@@ -41,6 +41,7 @@ export function createEmptyFormulario(): BitacoraFormulario {
     operador1: emptyOperador(),
     observaciones: '',
     reportIntervalMinutes: 15,
+    contactos: [],
     whatsappGrupo: null,
     createdAt: now,
     updatedAt: now,

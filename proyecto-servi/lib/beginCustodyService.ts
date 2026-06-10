@@ -1,6 +1,5 @@
 import type { BitacoraDetalle } from '../hooks/useBitacora';
-import type { ReportRouteEstatus } from '../lib/reportRouteHelpers';
-import type { Ubicacion } from '../types/models';
+import type { EnqueueParams } from './reportQueueService';
 
 type LocationResult = {
   latitude: number;
@@ -8,49 +7,46 @@ type LocationResult = {
   accuracy?: number | null;
 };
 
-type SendRouteReportFn = (params: {
-  bitacoraId: string;
-  photoUri: string;
-  latitud: number;
-  longitud: number;
-  precision_m?: number | null;
-  estatus?: ReportRouteEstatus;
-  reportIndex?: number;
-  fallbackUbicacion?: Ubicacion | null;
-}) => Promise<{ ok: boolean; error: string | null }>;
+type EnqueueFn = (params: EnqueueParams) => Promise<unknown>;
 
-/** Envía reporte inicio a n8n. La activación en Supabase la hace el workflow (Activar bitacora). */
+/** Encola reporte inicio. El envio a n8n continua en segundo plano. */
 export async function beginCustodyService(params: {
   bitacoraId: string;
   bitacora: BitacoraDetalle;
   photoUri: string;
   getCurrentLocation: () => Promise<LocationResult>;
-  sendRouteReport: SendRouteReportFn;
+  enqueue: EnqueueFn;
   prefetchedLocation?: LocationResult | null;
+  onActivated?: () => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { bitacoraId, bitacora, photoUri, getCurrentLocation, sendRouteReport, prefetchedLocation } =
-    params;
+  const {
+    bitacoraId,
+    bitacora,
+    photoUri,
+    getCurrentLocation,
+    enqueue,
+    prefetchedLocation,
+    onActivated,
+  } = params;
 
   try {
     const { latitude, longitude, accuracy } =
       prefetchedLocation ?? (await getCurrentLocation());
 
-    const sent = await sendRouteReport(
-      {
-        bitacoraId,
-        photoUri,
-        latitud: latitude,
-        longitud: longitude,
-        precision_m: accuracy ?? null,
-        estatus: 'inicio',
-        reportIndex: 1,
-        fallbackUbicacion: bitacora.formulario?.origen ?? null,
-      },
-      { awaitLiveLocation: false, skipGeocoding: true },
-    );
+    await enqueue({
+      bitacoraId,
+      photoUri,
+      latitud: latitude,
+      longitud: longitude,
+      precision_m: accuracy ?? null,
+      estatus: 'inicio',
+      reportIndex: 1,
+      fallbackUbicacion: bitacora.formulario?.origen ?? null,
+      skipGeocoding: true,
+    });
 
-    if (!sent.ok) {
-      return { ok: false, error: sent.error ?? 'No se pudo enviar el reporte de inicio a n8n.' };
+    if (onActivated) {
+      await onActivated();
     }
 
     return { ok: true };

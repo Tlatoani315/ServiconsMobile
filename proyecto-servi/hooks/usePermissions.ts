@@ -1,7 +1,7 @@
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, Platform } from 'react-native';
+import { Alert, AppState, Linking, Platform } from 'react-native';
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
 
@@ -29,6 +29,10 @@ export function usePermissions() {
 
   useEffect(() => {
     refresh();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refresh();
+    });
+    return () => sub.remove();
   }, [refresh]);
 
   const requestCamera = useCallback(async (): Promise<boolean> => {

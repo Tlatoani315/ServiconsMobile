@@ -1,6 +1,8 @@
 import { useRouter } from 'expo-router';
 
 import { WizardShell } from '../../../../components/WizardShell';
+import { useAuth } from '../../../../hooks/useAuth';
+import { useBitacoraSuggestions } from '../../../../hooks/useBitacoraSuggestions';
 import { useBitacoraStore, createEmptyFormulario } from '../../../../store/useBitacoraStore';
 import type { OperadorCustodiado } from '../../../../types/models';
 
@@ -8,10 +10,13 @@ import { OperadorFields } from './_operadorFields';
 
 const emptyOperador2 = (): OperadorCustodiado => ({
   ...createEmptyFormulario().operador1,
+  firma: '',
 });
 
 export default function WizardStep6() {
   const router = useRouter();
+  const { session } = useAuth();
+  const { filter } = useBitacoraSuggestions(session?.user?.id);
   const { formulario, updateFormulario } = useBitacoraStore();
   const op2 = formulario.operador2 ?? emptyOperador2();
 
@@ -26,8 +31,8 @@ export default function WizardStep6() {
     <WizardShell title="Operador 2 (opcional)" step={6} onNext={goStep7} onSkip={skip}>
       <OperadorFields
         operador={op2}
-        firmaLabel="Firma operador 2"
-        onChange={(operador2) => updateFormulario({ operador2 })}
+        suggest={filter}
+        onChange={(operador2) => updateFormulario({ operador2: { ...operador2, firma: '' } })}
       />
     </WizardShell>
   );

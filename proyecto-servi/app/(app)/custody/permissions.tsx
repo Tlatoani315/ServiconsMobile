@@ -9,14 +9,15 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useLocation } from '../../../hooks/useLocation';
 import { usePermissions } from '../../../hooks/usePermissions';
-import { useRouteReports } from '../../../hooks/useRouteReports';
+import { useReportQueue } from '../../../hooks/useReportQueue';
 import { beginCustodyService } from '../../../lib/beginCustodyService';
 import {
   clearCustodyStartPending,
   loadCustodyStartPending,
   saveCustodyStartPending,
 } from '../../../lib/custodyStartPending';
-import { deletePersistedPhoto, ensurePersistedCameraPhoto } from '../../../lib/persistCameraPhoto';
+import { ensurePersistedCameraPhoto } from '../../../lib/persistCameraPhoto';
+import { useRequireRouteId } from '../../../lib/useRequireRouteId';
 
 type PrefetchedLocation = {
   latitude: number;
@@ -26,13 +27,14 @@ type PrefetchedLocation = {
 
 /** Pantalla 5 — Permisos + foto inicial + reporte inicio a n8n */
 export default function CustodyPermissionsScreen() {
-  const { id, auto } = useLocalSearchParams<{ id: string; auto?: string }>();
+  const { id: rawId, auto } = useLocalSearchParams<{ id: string; auto?: string }>();
+  const id = useRequireRouteId(rawId);
   const router = useRouter();
   const { session } = useAuth();
-  const { getBitacoraDetalle } = useBitacora();
+  const { getBitacoraDetalle, iniciarCustodia } = useBitacora();
   const { allGranted, ensureFieldPermissions } = usePermissions();
   const { getCurrentLocation } = useLocation();
-  const { sendRouteReport } = useRouteReports();
+  const { enqueue, flush } = useReportQueue(id ?? undefined, session?.user?.id);
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -47,6 +49,7 @@ export default function CustodyPermissionsScreen() {
     setLoadingDetail(true);
     getBitacoraDetalle(id)
       .then(setBitacora)
+      .catch(() => setBitacora(null))
       .finally(() => setLoadingDetail(false));
   }, [id, getBitacoraDetalle]);
 
@@ -87,13 +90,24 @@ export default function CustodyPermissionsScreen() {
         }
         if (!detail) throw new Error('No se pudo cargar la bitacora.');
 
+        if (detail.estado === 'activo') {
+          await clearCustodyStartPending();
+          router.replace({ pathname: '/(app)/custody/active', params: { id } });
+          return;
+        }
+
         const result = await beginCustodyService({
           bitacoraId: id,
           bitacora: detail,
           photoUri: persistedPhotoUri,
           getCurrentLocation,
-          sendRouteReport,
+          enqueue,
           prefetchedLocation: locationPrefetchRef.current,
+          onActivated: async () => {
+            if (session.user?.id) {
+              await iniciarCustodia(id, session.user.id);
+            }
+          },
         });
 
         if (!result.ok) throw new Error(result.error);
@@ -101,7 +115,7 @@ export default function CustodyPermissionsScreen() {
         router.replace({ pathname: '/(app)/custody/active', params: { id } });
 
         void clearCustodyStartPending();
-        void deletePersistedPhoto(persistedPhotoUri);
+        void flush();
       } catch (e) {
         Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo iniciar el servicio');
       } finally {
@@ -115,8 +129,10 @@ export default function CustodyPermissionsScreen() {
       bitacora,
       getBitacoraDetalle,
       getCurrentLocation,
-      sendRouteReport,
+      enqueue,
       router,
+      iniciarCustodia,
+      flush,
     ],
   );
 
@@ -152,6 +168,8 @@ export default function CustodyPermissionsScreen() {
   };
 
   const busy = loading;
+
+  if (!id) return null;
 
   return (
     <SafeAreaView className="flex-1 bg-servi-fondo">
@@ -203,7 +221,7 @@ export default function CustodyPermissionsScreen() {
 
         {busy ? (
           <Text className="mt-3 text-center text-xs text-servi-suave">
-            Enviando foto a n8n… al recibir confirmacion abriremos el monitoreo.
+            Guardando reporte e iniciando monitoreo…
           </Text>
         ) : null}
       </ScrollView>

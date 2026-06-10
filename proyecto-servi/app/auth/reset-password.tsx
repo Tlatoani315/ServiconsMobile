@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -19,7 +19,7 @@ import { getPasswordRules, isPasswordValid } from '../../lib/authValidation';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const { updatePassword } = useAuth();
+  const { updatePassword, session, loading: authLoading } = useAuth();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,8 +28,20 @@ export default function ResetPasswordScreen() {
   const passwordRules = getPasswordRules(password);
   const passwordOk = isPasswordValid(password);
   const matchOk = confirm.length > 0 && password === confirm;
+  const recoveryReady = Boolean(session);
+
+  useEffect(() => {
+    if (!authLoading && !session) {
+      setError('Abre el enlace de recuperacion desde tu correo para continuar.');
+    }
+  }, [authLoading, session]);
 
   const handleSave = async () => {
+    if (!recoveryReady) {
+      setError('Abre el enlace de recuperacion desde tu correo para continuar.');
+      return;
+    }
+
     if (!passwordOk || !matchOk) {
       setError('Revisa los requisitos de contrasena.');
       return;
@@ -61,7 +73,9 @@ export default function ResetPasswordScreen() {
             <Logo size={64} />
             <Text className="mt-4 text-2xl font-bold text-servi-texto">Nueva contrasena</Text>
             <Text className="mt-2 text-center text-servi-suave">
-              Escribe tu nueva contrasena para recuperar el acceso
+              {recoveryReady
+                ? 'Escribe tu nueva contrasena para recuperar el acceso'
+                : 'Esperando enlace de recuperacion desde tu correo…'}
             </Text>
           </View>
 
@@ -74,6 +88,7 @@ export default function ResetPasswordScreen() {
             showToggle
             showPasswordRules
             showValidation
+            editable={recoveryReady}
           />
 
           <AuthTextField
@@ -93,6 +108,7 @@ export default function ResetPasswordScreen() {
               },
             ]}
             validationTitle="Confirmacion"
+            editable={recoveryReady}
           />
 
           {error ? <Text className="mb-4 text-center text-sm text-servi-peligro">{error}</Text> : null}
@@ -102,7 +118,7 @@ export default function ResetPasswordScreen() {
             variant="accent"
             onPress={handleSave}
             loading={loading}
-            disabled={!passwordOk || !matchOk}
+            disabled={!recoveryReady || !passwordOk || !matchOk}
           />
 
           <Pressable className="mt-6 items-center py-2" onPress={() => router.replace('/auth/login')}>

@@ -6,13 +6,21 @@ export function useAutoRefresh(load: () => void | Promise<void>, intervalMs = 15
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  const safeLoad = useCallback(async () => {
+    try {
+      await loadRef.current();
+    } catch (e) {
+      console.warn('[useAutoRefresh] load failed', e);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      void loadRef.current();
+      void safeLoad();
       const id = setInterval(() => {
-        void loadRef.current();
+        void safeLoad();
       }, intervalMs);
       return () => clearInterval(id);
-    }, [intervalMs]),
+    }, [intervalMs, safeLoad]),
   );
 }

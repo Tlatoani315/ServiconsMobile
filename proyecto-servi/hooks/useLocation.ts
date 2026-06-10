@@ -5,16 +5,15 @@ export function useLocation() {
   const [permissionGranted, setPermissionGranted] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+    void Location.getForegroundPermissionsAsync().then(({ status }) => {
       setPermissionGranted(status === 'granted');
-    })();
+    });
   }, []);
 
   const getCurrentLocation = useCallback(async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    const { status } = await Location.getForegroundPermissionsAsync();
     if (status !== 'granted') {
-      throw new Error('Permiso de ubicación denegado');
+      throw new Error('Permiso de ubicacion denegado. Activalo en Ajustes.');
     }
 
     const lastKnown = await Location.getLastKnownPositionAsync();

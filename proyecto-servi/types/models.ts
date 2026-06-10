@@ -94,6 +94,8 @@ export interface BitacoraFormulario {
   contactos?: BitacoraContactos;
   /** @deprecated usar contactos — se lee solo en bitacoras antiguas */
   whatsappGrupo?: BitacoraContacto | null;
+  /** Firma del custodio al crear la bitacora (operador firma al cerrar servicio) */
+  firmaCustodio?: string;
   createdAt: string;
   updatedAt: string;
 }

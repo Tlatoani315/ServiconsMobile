@@ -4,6 +4,9 @@ Single Source of Truth para Cursor / Gemini
 ================================================================
 Lee TODO este documento antes de escribir código.
 Confirma cada fase en Expo Go antes de avanzar a la siguiente.
+
+NOTA (2026): Custodia usa n8n report-route (inicio/reporte/termino) y triggerSOS.
+PDF es local (reportPdfService). Ver Endpoints a hacer.md.
 ================================================================
 
 ================================================================

@@ -271,6 +271,14 @@
                 "type": "string",
                 "operation": "equals"
               }
+            },
+            {
+              "leftValue": "={{ $('Get a row').item.json.estado }}",
+              "rightValue": "activo",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
             }
           ],
           "combinator": "and"

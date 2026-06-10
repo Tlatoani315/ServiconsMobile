@@ -38,10 +38,11 @@ const estadoConfig: Record<
 type Props = {
   bitacora: BitacoraResumen;
   onPress: () => void;
+  onDuplicate?: () => void;
   index?: number;
 };
 
-export function ServiceCard({ bitacora, onPress, index = 0 }: Props) {
+export function ServiceCard({ bitacora, onPress, onDuplicate, index = 0 }: Props) {
   const cfg = estadoConfig[bitacora.estado] ?? estadoConfig.pendiente;
   const isActive = bitacora.estado === 'activo';
   const isPending = bitacora.estado === 'pendiente';
@@ -52,6 +53,8 @@ export function ServiceCard({ bitacora, onPress, index = 0 }: Props) {
         className="mb-3 overflow-hidden rounded-2xl border border-servi-borde bg-servi-superficie"
         style={{ borderLeftWidth: 4, borderLeftColor: cfg.borderColor }}
         onPress={onPress}
+        onLongPress={onDuplicate}
+        delayLongPress={400}
       >
         <View className="flex-row items-start p-4">
           <View
@@ -95,7 +98,11 @@ export function ServiceCard({ bitacora, onPress, index = 0 }: Props) {
               </View>
             ) : isPending ? (
               <Text className="mt-2 text-xs text-amber-300/90">
-                Toca para revisar datos e iniciar custodia
+                Toca para iniciar · mantén pulsado para reutilizar datos
+              </Text>
+            ) : bitacora.estado === 'completado' ? (
+              <Text className="mt-2 text-xs text-sky-300/90">
+                Mantén pulsado para duplicar como nueva bitacora
               </Text>
             ) : null}
           </View>

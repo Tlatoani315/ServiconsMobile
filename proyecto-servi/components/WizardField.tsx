@@ -8,6 +8,8 @@ type Props = {
   multiline?: boolean;
   required?: boolean;
   keyboardType?: KeyboardTypeOptions;
+  onFocus?: () => void;
+  onBlur?: () => void;
 };
 
 export function WizardField({
@@ -18,6 +20,8 @@ export function WizardField({
   multiline,
   required,
   keyboardType,
+  onFocus,
+  onBlur,
 }: Props) {
   return (
     <View className="mb-4">
@@ -33,6 +37,8 @@ export function WizardField({
         placeholderTextColor="#A8B8CC"
         multiline={multiline}
         keyboardType={keyboardType}
+        onFocus={onFocus}
+        onBlur={onBlur}
         numberOfLines={multiline ? 4 : 1}
       />
     </View>

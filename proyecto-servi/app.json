@@ -2,7 +2,7 @@
   "expo": {
     "name": "Servicons Mobile",
     "slug": "servicons-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "scheme": "servicons-mobile",
@@ -10,8 +10,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicación para los reportes.",
-        "NSCameraUsageDescription": "Necesitamos la cámara para las evidencias.",
+        "NSLocationWhenInUseUsageDescription": "Servicons registra tu ubicacion en cada reporte y alerta SOS para que el cliente y administradores puedan monitorear el servicio en tiempo real.",
+        "NSCameraUsageDescription": "Servicons necesita la camara para tomar fotos de evidencia durante el monitoreo de custodia.",
         "LSApplicationQueriesSchemes": [
           "comgooglemaps",
           "googlemaps",
@@ -24,14 +24,29 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundColor": "#E6F4FE"
       },
-      "versionCode": 1,
+      "versionCode": 3,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "com.anonymous.serviconsmobile"
+      "package": "com.servicons.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            {
+              "scheme": "servicons-mobile"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -41,24 +56,25 @@
       "expo-router",
       "expo-secure-store",
       [
-        "expo-image-picker",
-        {
-          "cameraPermission": "Necesitamos la camara para las evidencias.",
-          "photosPermission": "Permite acceder a fotos para evidencias del servicio."
-        }
-      ],
-      [
         "expo-camera",
         {
-          "cameraPermission": "Necesitamos la cámara para las evidencias."
+          "cameraPermission": "Servicons necesita la camara para tomar fotos de evidencia durante el monitoreo de custodia."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Necesitamos tu ubicación para los reportes."
+          "locationWhenInUsePermission": "Servicons registra tu ubicacion en cada reporte y alerta SOS para que el cliente y administradores puedan monitorear el servicio en tiempo real."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#F97316"
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

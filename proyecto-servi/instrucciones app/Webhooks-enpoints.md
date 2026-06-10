@@ -1,107 +1,76 @@
-## Endpoint de n8n: [Nombre del proceso]
-- **URL de Producción:** https://tu-instancia.n8n.cloud/webhook/tu-endpoint
-- **Método:** POST
-- **Headers:** `Content-Type: application/json`
-- **Body (Ejemplo):**
-  {
-    "usuario_id": 123,
-    "accion": "actualizar"
-  }
-# Endpoint de n8n: [Obtener contactos y grupos]
+# Webhooks n8n — Servicons
 
-- **URL de Producción:** [https://n8n.pymemind.com/webhook/get-channels](https://n8n.pymemind.com/webhook/get-channels)
-    
-- **Método:** GET
-    
-- **Headers:** `X-Webhook-Token: servicons-token-2025`
-    
+Documentacion de referencia. **Endpoints activos:** `get-channels`, `report-route`, `sos`.  
+Los legacy `start-route`, `report-evidence`, `finish-route` y `export-pdf` ya no se usan en la app.
 
-## 📥 Parámetros de Consulta (Query Parameters)
+---
 
-Este endpoint no requiere parámetros obligatorios.
+# GET /webhook/get-channels
 
-## 📤 Respuesta Exitosa (200 OK)
+- **URL:** https://n8n.pymemind.com/webhook/get-channels
+- **Metodo:** GET
+- **Headers:** `X-Webhook-Token`
 
-El endpoint retorna un arreglo de contactos y grupos disponibles para mensajería. Cada elemento contiene únicamente la información necesaria para identificar el destino de un mensaje en WhatsApp mediante Evolution API.
+Retorna contactos/grupos WhatsApp para el wizard de bitacora.
 
-## Estructura de la Respuesta
+## Respuesta (200)
 
 ```json
 [
-  {
-    "remoteJid": "198745685786641@lid",
-    "pushName": "Luisito"
-  },
-  {
-    "remoteJid": "120363408381390278@g.us",
-    "pushName": "prueba_grupos"
-  }
+  { "remoteJid": "120363408381390278@g.us", "pushName": "Grupo cliente" },
+  { "remoteJid": "198745685786641@lid", "pushName": "Contacto" }
 ]
 ```
 
-## 📋 Campos de la Respuesta
+Tambien acepta `{ "channels": [ ... ] }`.
 
-| Campo       | Tipo   | Descripción                                                                                                  |
-| ----------- | ------ | ------------------------------------------------------------------------------------------------------------ |
-| `remoteJid` | string | Identificador único del chat en WhatsApp. Este valor se utiliza para enviar mensajes mediante Evolution API. |
-| `pushName`  | string | Nombre visible del contacto o grupo.                                                                         |
+| Sufijo remoteJid | Tipo |
+|------------------|------|
+| `@g.us` | Grupo |
+| `@s.whatsapp.net` | Contacto |
+| `@lid` | LID WhatsApp |
 
-## 📝 Notas
+---
 
-- El endpoint devuelve un único arreglo que puede contener contactos individuales y grupos.
-    
-- El campo `remoteJid` es el identificador principal requerido para enviar mensajes.
-    
-- El campo `pushName` se proporciona únicamente para mostrar nombres amigables en interfaces de usuario.
-    
-- El tipo de conversación puede inferirse mediante el valor de `remoteJid`:
-    
+# POST /webhook/report-route
 
-|Sufijo|Tipo|
-|---|---|
-|`@s.whatsapp.net`|Contacto individual|
-|`@g.us`|Grupo de WhatsApp|
-|`@lid`|Identificador LID de WhatsApp|
+- **Metodo:** POST
+- **Content-Type:** `multipart/form-data`
+- **Headers:** `X-Webhook-Token`
 
-### Ejemplo de uso con Evolution API
+## Campos
+
+| Campo | Tipo | Descripcion |
+|-------|------|-------------|
+| `data` | file | Foto JPG |
+| `idBitacora` | string | UUID bitacora |
+| `latitud` | string/number | GPS |
+| `longitud` | string/number | GPS |
+| `direccion` | string | Direccion legible |
+| `fecha` | string | YYYY-MM-DD |
+| `hora` | string | HH:mm |
+| `estatus` | string | `inicio`, `reporte`, `termino` |
+
+Workflow: `n8n/report-route-workflow.json`
+
+---
+
+# POST /webhook/sos
+
+- **Metodo:** POST
+- **Content-Type:** `application/json`
+- **Headers:** `X-Webhook-Token`
 
 ```json
 {
-  "number": "198745685786641@lid",
-  "text": "Hola, este es un mensaje de prueba."
+  "custodio_id": "uuid",
+  "custodio_nombre": "Nombre",
+  "bitacora_id": "uuid",
+  "latitud": 19.43,
+  "longitud": -99.13,
+  "timestamp": "2026-06-09T12:00:00.000Z",
+  "contactos_emergencia": [{ "remoteJid": "...", "pushName": "..." }]
 }
 ```
 
-o
-
-```json
-{
-  "number": "120363408381390278@g.us",
-  "text": "Hola grupo."
-}
-```
-
-- El endpoint excluye automáticamente los chats especiales del sistema de WhatsApp, como `0@s.whatsapp.net`.
-    
-- La respuesta está optimizada para listados de contactos, selección de destinatarios y envío de mensajes.
-# Endpoint de n8n: [Nombre del proceso]
-- **URL de Producción:** https://tu-instancia.n8n.cloud/webhook/tu-endpoint
-- **Método:** POST
-- **Headers:** `Content-Type: application/json`
-- **Body (Ejemplo):**
-  {
-    "usuario_id": 123,
-    "accion": "actualizar"
-  }
-Información util
-- Agrega un nodo **Webhook**.
-    
-- Cambia el **HTTP Method** a `POST`.
-    
-- En **Respond**, selecciona `Using 'Respond to Webhook' Node`. Esto es crucial para poder procesar la imagen antes de devolverla.
-    
-- Define un **Path**, por ejemplo: `recibir-reporte-custodio`.
-    
-- Asegúrate de que el sistema desde donde envías los datos use el formato `multipart/form-data`.
-    
-- El archivo de la foto debe enviarse en un campo llamado `data` (n8n por defecto lee los binarios ahí) y los demás campos como texto: `latitud`, `longitud`, `fecha`, `hora`, `custodio`, `estatus` y el array de contactos (`contactos`).
+La app inserta primero en `sos_alerts` y luego llama este webhook.

@@ -10,6 +10,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import { createSessionFromUrl } from '../lib/authDeepLink';
+import { clearCustodyStartPending } from '../lib/custodyStartPending';
+import { isValidRole } from '../lib/roles';
 import { supabase } from '../lib/supabaseClient';
 import type { UserProfile, UserRole } from '../types/models';
 
@@ -35,7 +38,7 @@ type AuthContextValue = {
     role?: UserRole;
     pendingConfirmation?: boolean;
   }>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<{ error: string | null }>;
   updateProfile: (data: {
     nombre?: string;
     celular?: string | null;
@@ -53,40 +56,100 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
   return data as UserProfile;
 }
 
+function isProfileAllowed(profile: UserProfile | null): profile is UserProfile {
+  if (!profile) return false;
+  if (profile.activo === false) return false;
+  return isValidRole(profile.role);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadProfile = useCallback(async (userId: string) => {
+  const invalidateSession = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+  }, []);
+
+  const applyProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
     const data = await fetchProfile(userId);
+    if (!isProfileAllowed(data)) {
+      setProfile(null);
+      return null;
+    }
     setProfile(data);
     return data;
   }, []);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      if (currentSession?.user) {
-        await loadProfile(currentSession.user.id);
+  const ensureValidSessionProfile = useCallback(
+    async (userId: string) => {
+      const data = await fetchProfile(userId);
+      if (!isProfileAllowed(data)) {
+        await invalidateSession();
+        return null;
       }
-      setLoading(false);
-    });
+      setProfile(data);
+      return data;
+    },
+    [invalidateSession],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const bootstrap = async () => {
+      try {
+        const {
+          data: { session: currentSession },
+        } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(currentSession);
+        if (currentSession?.user) {
+          await ensureValidSessionProfile(currentSession.user.id);
+        }
+      } catch (e) {
+        console.error('[auth] bootstrap failed', e);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    void bootstrap();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.user) {
-        await loadProfile(nextSession.user.id);
+        setTimeout(() => {
+          void ensureValidSessionProfile(nextSession.user!.id);
+        }, 0);
       } else {
         setProfile(null);
       }
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, [loadProfile]);
+    const handleDeepLink = (url: string) => {
+      void createSessionFromUrl(url).then(({ error }) => {
+        if (error) console.warn('[auth] deep link session error:', error);
+      });
+    };
+
+    void Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink(url);
+    });
+
+    const linkSub = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      linkSub.remove();
+    };
+  }, [ensureValidSessionProfile]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
@@ -111,27 +174,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!data.user) return { error: 'No se pudo iniciar sesion.' };
 
-      const userProfile = await loadProfile(data.user.id);
+      const userProfile = await applyProfile(data.user.id);
 
       if (!userProfile) {
-        await supabase.auth.signOut();
+        const raw = await fetchProfile(data.user.id);
+        await invalidateSession();
+        if (raw?.activo === false) {
+          return { error: 'Tu cuenta esta desactivada. Contacta al administrador.' };
+        }
+        if (raw && !isValidRole(raw.role)) {
+          return { error: 'Tu cuenta tiene un rol invalido. Contacta al administrador.' };
+        }
         return {
           error:
             'Tu cuenta existe pero no tiene perfil. Contacta al administrador o registrate de nuevo.',
         };
       }
 
-      if (userProfile.activo === false) {
-        await supabase.auth.signOut();
-        setProfile(null);
-        setSession(null);
-        return { error: 'Tu cuenta esta desactivada. Contacta al administrador.' };
-      }
-
       if (data.session) setSession(data.session);
       return { error: null, role: userProfile.role };
     },
-    [loadProfile],
+    [applyProfile, invalidateSession],
   );
 
   const signUp = useCallback(
@@ -152,8 +215,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) return { error: error.message };
       if (!data.user) return { error: 'No se pudo crear la cuenta.' };
 
-      // El trigger handle_new_user crea el perfil (SECURITY DEFINER, sin RLS).
-      // Solo upsert desde la app si hay sesion activa; sin sesion RLS lo bloquea.
       if (data.session) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
@@ -165,11 +226,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (profileError) {
+          await invalidateSession();
           return { error: `Cuenta creada pero fallo el perfil: ${profileError.message}` };
         }
 
         setSession(data.session);
-        await loadProfile(data.user.id);
+        await applyProfile(data.user.id);
         return { error: null, role };
       }
 
@@ -179,12 +241,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pendingConfirmation: true,
       };
     },
-    [loadProfile],
+    [applyProfile, invalidateSession],
   );
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    setProfile(null);
+    try {
+      await clearCustodyStartPending();
+      await supabase.auth.signOut();
+      setSession(null);
+      setProfile(null);
+      return { error: null };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'No se pudo cerrar sesion.';
+      console.error('[auth] signOut failed', e);
+      return { error: message };
+    }
   }, []);
 
   const updateProfile = useCallback(
@@ -197,10 +268,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('id', session.user.id);
 
       if (error) return { error: error.message };
-      await loadProfile(session.user.id);
+      await applyProfile(session.user.id);
       return { error: null };
     },
-    [session?.user, loadProfile],
+    [session?.user, applyProfile],
   );
 
   const resetPassword = useCallback(async (email: string) => {
@@ -220,8 +291,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ session, profile, loading, signIn, signUp, signOut, updateProfile, resetPassword, updatePassword }),
-    [session, profile, loading, signIn, signUp, signOut, updateProfile, resetPassword, updatePassword],
+    () => ({
+      session,
+      profile,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      updateProfile,
+      resetPassword,
+      updatePassword,
+    }),
+    [
+      session,
+      profile,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      updateProfile,
+      resetPassword,
+      updatePassword,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

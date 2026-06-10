@@ -1,45 +1,85 @@
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 
+import { WizardDateTimeField } from '../../../../components/WizardDateTimeField';
 import { WizardField } from '../../../../components/WizardField';
 import { WizardShell } from '../../../../components/WizardShell';
+import { useAppToast } from '../../../../hooks/useAppToast';
+import type { TiempoFieldKey } from '../../../../lib/validateBitacoraTiempos';
+import {
+  validateTiemposAfterUpdate,
+  validateTiemposChain,
+} from '../../../../lib/validateBitacoraTiempos';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
+import type { Tiempos } from '../../../../types/models';
 
 export default function WizardStep3() {
   const router = useRouter();
+  const toast = useAppToast();
   const { formulario, updateFormulario } = useBitacoraStore();
   const t = formulario.tiempos;
 
+  const setTiempo = (key: TiempoFieldKey, value: string) => {
+    const next: Tiempos = { ...t, [key]: value };
+    const err = validateTiemposAfterUpdate(next, key);
+    if (err) {
+      toast.warning('Horario invalido', err);
+      return;
+    }
+    updateFormulario({ tiempos: next });
+  };
+
+  const goNext = () => {
+    const err = validateTiemposChain(t);
+    if (err) {
+      Alert.alert('Horarios inconsistentes', err);
+      return;
+    }
+    router.push('/(app)/bitacora/wizard/step4');
+  };
+
   return (
-    <WizardShell title="Tiempos de viaje" step={3} onNext={() => router.push('/(app)/bitacora/wizard/step4')}>
-      <WizardField
-        label="Fecha/hora salida"
+    <WizardShell
+      title="Tiempos de viaje"
+      subtitle="Opcional — deben ser despues de la cita y en orden"
+      step={3}
+      onNext={goNext}
+    >
+      <WizardDateTimeField
+        label="Fecha y hora de salida"
         value={t.fechaHoraSalida ?? ''}
-        onChangeText={(v) => updateFormulario({ tiempos: { ...t, fechaHoraSalida: v } })}
+        onChange={(v) => setTiempo('fechaHoraSalida', v)}
+        placeholder="Elegir salida"
       />
-      <WizardField
-        label="Fecha/hora verificacion"
+      <WizardDateTimeField
+        label="Fecha y hora de verificacion"
         value={t.fechaHoraVerificacion ?? ''}
-        onChangeText={(v) => updateFormulario({ tiempos: { ...t, fechaHoraVerificacion: v } })}
+        onChange={(v) => setTiempo('fechaHoraVerificacion', v)}
+        placeholder="Elegir verificacion"
       />
-      <WizardField
-        label="Fecha/hora llegada"
+      <WizardDateTimeField
+        label="Fecha y hora de llegada"
         value={t.fechaHoraLlegada ?? ''}
-        onChangeText={(v) => updateFormulario({ tiempos: { ...t, fechaHoraLlegada: v } })}
+        onChange={(v) => setTiempo('fechaHoraLlegada', v)}
+        placeholder="Elegir llegada"
       />
-      <WizardField
-        label="Fecha/hora fin"
+      <WizardDateTimeField
+        label="Fecha y hora de fin"
         value={t.fechaHoraFin ?? ''}
-        onChangeText={(v) => updateFormulario({ tiempos: { ...t, fechaHoraFin: v } })}
+        onChange={(v) => setTiempo('fechaHoraFin', v)}
+        placeholder="Elegir fin"
       />
       <WizardField
         label="Odometro final"
         value={t.odometroFinal ?? ''}
         onChangeText={(v) => updateFormulario({ tiempos: { ...t, odometroFinal: v } })}
+        keyboardType="number-pad"
       />
       <WizardField
         label="Km totales"
         value={t.kmTotales ?? ''}
         onChangeText={(v) => updateFormulario({ tiempos: { ...t, kmTotales: v } })}
+        keyboardType="number-pad"
       />
       <WizardField
         label="Estadia"

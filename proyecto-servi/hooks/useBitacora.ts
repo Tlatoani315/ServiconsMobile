@@ -137,6 +137,28 @@ export function useBitacora() {
     return data as BitacoraDetalle;
   }, []);
 
+  /** Ultimas bitacoras solo para sugerencias locales en wizard (1 query, sin filtrar por tecla) */
+  const getRecentFormularios = useCallback(async (): Promise<BitacoraFormulario[]> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user?.id) return [];
+
+    const { data, error: fetchError } = await supabase
+      .from('bitacoras')
+      .select('formulario')
+      .eq('custodio_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (fetchError) return [];
+
+    return (data ?? [])
+      .map((row) => row.formulario as BitacoraFormulario | null)
+      .filter((f): f is BitacoraFormulario => Boolean(f?.nombre));
+  }, []);
+
   const createBitacora = useCallback(
     async (formulario: BitacoraFormulario, custodioId: string) => {
       setLoading(true);
@@ -235,6 +257,7 @@ export function useBitacora() {
     getBitacoraById,
     getBitacoraDetalle,
     getBitacoraEvidencias,
+    getRecentFormularios,
     createBitacora,
     iniciarCustodia,
     cerrarCustodia,

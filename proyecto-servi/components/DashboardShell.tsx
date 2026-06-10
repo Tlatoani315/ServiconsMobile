@@ -156,7 +156,17 @@ export function DashboardHeader({ title, role: roleProp }: Props) {
                 closeMenu();
                 Alert.alert('Cerrar sesion', 'Deseas salir de tu cuenta?', [
                   { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Salir', style: 'destructive', onPress: () => signOut() },
+                  {
+                    text: 'Salir',
+                    style: 'destructive',
+                    onPress: () => {
+                      void signOut().then(({ error }) => {
+                        if (error) {
+                          Alert.alert('Error', error);
+                        }
+                      });
+                    },
+                  },
                 ]);
               }}
               danger

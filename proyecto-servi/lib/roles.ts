@@ -1,5 +1,11 @@
 import type { UserRole } from '../types/models';
 
+const VALID_ROLES: UserRole[] = ['super_usuario', 'jefe_custodios', 'custodio', 'cliente'];
+
+export function isValidRole(role: unknown): role is UserRole {
+  return typeof role === 'string' && VALID_ROLES.includes(role as UserRole);
+}
+
 /** Master Seccion 1: la app operativa es solo custodio -> home */
 export const CUSTODIO_HOME_ROUTE = '/(app)/home';
 

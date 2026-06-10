@@ -1,20 +1,55 @@
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 
+import { WizardDateTimeField } from '../../../../components/WizardDateTimeField';
+import { SuggestWizardField } from '../../../../components/SuggestWizardField';
 import { WizardField } from '../../../../components/WizardField';
 import { WizardSectionCard } from '../../../../components/WizardSectionCard';
 import { WizardShell } from '../../../../components/WizardShell';
+import { useAppToast } from '../../../../hooks/useAppToast';
+import { useAuth } from '../../../../hooks/useAuth';
+import { useBitacoraSuggestions } from '../../../../hooks/useBitacoraSuggestions';
+import type { TiempoFieldKey } from '../../../../lib/validateBitacoraTiempos';
+import {
+  validateTiemposAfterUpdate,
+  validateTiemposChain,
+} from '../../../../lib/validateBitacoraTiempos';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
+import type { Tiempos } from '../../../../types/models';
 
 export default function WizardStep2() {
   const router = useRouter();
+  const toast = useAppToast();
+  const { session } = useAuth();
   const { formulario, updateFormulario } = useBitacoraStore();
+  const { filter } = useBitacoraSuggestions(session?.user?.id);
+  const tiempos = formulario.tiempos;
+
+  const setTiempo = (key: TiempoFieldKey, value: string) => {
+    const next: Tiempos = { ...tiempos, [key]: value };
+    const err = validateTiemposAfterUpdate(next, key);
+    if (err) {
+      toast.warning('Horario invalido', err);
+      return;
+    }
+    updateFormulario({ tiempos: next });
+  };
+
+  const goNext = () => {
+    const err = validateTiemposChain(tiempos);
+    if (err) {
+      Alert.alert('Horarios inconsistentes', err);
+      return;
+    }
+    router.push('/(app)/bitacora/wizard/step3');
+  };
 
   return (
     <WizardShell
       title="Vehiculo y tiempos"
       subtitle="Unidad custodiada e intervalo de reportes"
       step={2}
-      onNext={() => router.push('/(app)/bitacora/wizard/step3')}
+      onNext={goNext}
     >
       <WizardSectionCard
         title="Vehiculo en custodia"
@@ -22,7 +57,7 @@ export default function WizardStep2() {
         icon="car-outline"
         tone="blue"
       >
-        <WizardField
+        <SuggestWizardField
           label="Placas vehiculo custodia"
           value={formulario.vehiculoCustodia.placas}
           onChangeText={(v) =>
@@ -31,6 +66,7 @@ export default function WizardStep2() {
             })
           }
           placeholder="ABC-123-D"
+          suggestions={filter('placasCustodia', formulario.vehiculoCustodia.placas)}
         />
         <WizardField
           label="Color"
@@ -55,31 +91,28 @@ export default function WizardStep2() {
 
       <WizardSectionCard
         title="Programacion"
-        subtitle="Cita, odometro e intervalo GPS"
+        subtitle="Los horarios deben ir en orden cronologico"
         icon="time-outline"
         tone="orange"
       >
-        <WizardField
-          label="Fecha/hora presentacion"
-          value={formulario.tiempos.fechaHoraPresentacion ?? ''}
-          onChangeText={(v) =>
-            updateFormulario({ tiempos: { ...formulario.tiempos, fechaHoraPresentacion: v } })
-          }
-          placeholder="DD/MM/AAAA HH:MM"
+        <WizardDateTimeField
+          label="Fecha y hora de presentacion"
+          value={tiempos.fechaHoraPresentacion ?? ''}
+          onChange={(v) => setTiempo('fechaHoraPresentacion', v)}
+          placeholder="Elegir presentacion"
         />
-        <WizardField
-          label="Fecha/hora cita"
-          value={formulario.tiempos.fechaHoraCita}
-          onChangeText={(v) =>
-            updateFormulario({ tiempos: { ...formulario.tiempos, fechaHoraCita: v } })
-          }
-          placeholder="DD/MM/AAAA HH:MM"
+        <WizardDateTimeField
+          label="Fecha y hora de cita (inicio de ruta)"
+          value={tiempos.fechaHoraCita}
+          onChange={(v) => setTiempo('fechaHoraCita', v)}
+          required
+          placeholder="Elegir cita"
         />
         <WizardField
           label="Odometro inicial"
-          value={formulario.tiempos.odometroInicial}
+          value={tiempos.odometroInicial}
           onChangeText={(v) =>
-            updateFormulario({ tiempos: { ...formulario.tiempos, odometroInicial: v } })
+            updateFormulario({ tiempos: { ...tiempos, odometroInicial: v } })
           }
           keyboardType="number-pad"
         />

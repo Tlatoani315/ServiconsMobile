@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from './AppButton';
 
@@ -29,6 +29,8 @@ export function WizardShell({
   scrollEnabled = true,
 }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 12);
 
   return (
     <SafeAreaView className="flex-1 bg-servi-fondo">
@@ -66,7 +68,10 @@ export function WizardShell({
         {children}
       </ScrollView>
 
-      <View className="border-t border-servi-borde px-4 py-4">
+      <View
+        className="border-t border-servi-borde px-4 pt-4"
+        style={{ paddingBottom: bottomPad }}
+      >
         {onSkip ? (
           <Pressable className="mb-3 items-center py-2" onPress={onSkip}>
             <Text className="text-servi-suave">Omitir</Text>

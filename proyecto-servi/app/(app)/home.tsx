@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   Text,
@@ -21,6 +22,7 @@ import { MonitoringKpiStrip } from '../../components/MonitoringKpiStrip';
 import { SegmentedTabs } from '../../components/SegmentedTabs';
 import { ServiceCard } from '../../components/ServiceCard';
 import { countBitacorasByEstado, getBitacoraTotals } from '../../lib/bitacoraStats';
+import { cloneFormularioForReuse } from '../../lib/duplicateBitacoraForm';
 import { getDashboardTitleForRole } from '../../lib/roles';
 import { useAuth } from '../../hooks/useAuth';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
@@ -96,6 +98,38 @@ export default function HomeScreen() {
       params: { id: confirmId, auto: '1' },
     });
   };
+
+  const duplicarBitacora = useCallback(
+    async (item: BitacoraResumen) => {
+      if (item.estado === 'activo') {
+        Alert.alert('No disponible', 'No puedes duplicar un servicio en curso.');
+        return;
+      }
+
+      const detail = await getBitacoraDetalle(item.id);
+      const source = detail?.formulario;
+      if (!source) {
+        Alert.alert('No se pudo duplicar', 'Esta bitacora no tiene datos reutilizables.');
+        return;
+      }
+
+      Alert.alert(
+        'Reutilizar bitacora',
+        `Se copiaran los datos de "${item.nombre ?? 'servicio'}" sin fechas ni firmas. Podras editarlos antes de guardar.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Continuar',
+            onPress: () => {
+              useBitacoraStore.setState({ formulario: cloneFormularioForReuse(source) });
+              router.push('/(app)/bitacora/wizard/step1');
+            },
+          },
+        ],
+      );
+    },
+    [getBitacoraDetalle, router],
+  );
 
   return (
     <View className="flex-1 bg-servi-fondo">
@@ -177,7 +211,15 @@ export default function HomeScreen() {
             />
           ) : (
             filtradas.map((b, index) => (
-              <ServiceCard key={b.id} bitacora={b} index={index} onPress={() => openService(b)} />
+              <ServiceCard
+                key={b.id}
+                bitacora={b}
+                index={index}
+                onPress={() => openService(b)}
+                onDuplicate={
+                  b.estado === 'activo' ? undefined : () => void duplicarBitacora(b)
+                }
+              />
             ))
           )}
         </View>

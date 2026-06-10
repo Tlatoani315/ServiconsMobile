@@ -43,6 +43,7 @@ export function createEmptyFormulario(): BitacoraFormulario {
     reportIntervalMinutes: 15,
     contactos: [],
     whatsappGrupo: null,
+    firmaCustodio: '',
     createdAt: now,
     updatedAt: now,
   };

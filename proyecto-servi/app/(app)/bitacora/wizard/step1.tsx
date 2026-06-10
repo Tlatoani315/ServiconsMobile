@@ -1,12 +1,18 @@
 import { useRouter } from 'expo-router';
+import { useMemo } from 'react';
+import { Alert } from 'react-native';
 
+import { SuggestWizardField } from '../../../../components/SuggestWizardField';
 import { LocationFormSection } from '../../../../components/LocationFormSection';
 import { ChannelPicker } from '../../../../components/ChannelPicker';
-import { WizardField } from '../../../../components/WizardField';
 import { WizardSectionCard } from '../../../../components/WizardSectionCard';
 import { WizardShell } from '../../../../components/WizardShell';
 import { useAppToast } from '../../../../hooks/useAppToast';
+import { useAuth } from '../../../../hooks/useAuth';
+import { useBitacoraSuggestions, type UbicacionSugerida } from '../../../../hooks/useBitacoraSuggestions';
+import { useFavoriteUbicaciones } from '../../../../hooks/useFavoriteUbicaciones';
 import { hasUbicacionAddress } from '../../../../lib/ubicacionAddress';
+import type { Ubicacion } from '../../../../types/models';
 import { useBitacoraStore } from '../../../../store/useBitacoraStore';
 
 function validateUbicacion(
@@ -42,7 +48,25 @@ function validateUbicacion(
 export default function WizardStep1() {
   const router = useRouter();
   const toast = useAppToast();
+  const { session } = useAuth();
   const { formulario, updateFormulario } = useBitacoraStore();
+  const { filter, recent } = useBitacoraSuggestions(session?.user?.id);
+  const { favorites, addFavorite } = useFavoriteUbicaciones();
+
+  const favoriteItems: UbicacionSugerida[] = useMemo(
+    () =>
+      favorites.map((f) => ({
+        id: f.id,
+        label: f.alias,
+        ubicacion: f.ubicacion,
+        kind: 'favorito' as const,
+      })),
+    [favorites],
+  );
+
+  const saveFavorite = async (ubicacion: Ubicacion, alias: string) => {
+    await addFavorite(ubicacion, alias);
+  };
 
   const next = () => {
     if (!formulario.nombre.trim()) {
@@ -82,25 +106,28 @@ export default function WizardStep1() {
         icon="document-text-outline"
         tone="orange"
       >
-        <WizardField
+        <SuggestWizardField
           label="Nombre del servicio"
           value={formulario.nombre}
           onChangeText={(v) => updateFormulario({ nombre: v })}
           placeholder="Ej. Custodia Monterrey - CDMX"
           required
+          suggestions={filter('nombre', formulario.nombre)}
         />
-        <WizardField
+        <SuggestWizardField
           label="Empresa contratante"
           value={formulario.empresaContratante}
           onChangeText={(v) => updateFormulario({ empresaContratante: v })}
           placeholder="Razon social del cliente"
           required
+          suggestions={filter('empresaContratante', formulario.empresaContratante)}
         />
-        <WizardField
+        <SuggestWizardField
           label="Folio cliente"
           value={formulario.folioCliente}
           onChangeText={(v) => updateFormulario({ folioCliente: v })}
           placeholder="Referencia interna del cliente"
+          suggestions={filter('folioCliente', formulario.folioCliente)}
         />
         <ChannelPicker
           value={formulario.contactos ?? []}
@@ -120,6 +147,11 @@ export default function WizardStep1() {
           showGpsCapture
           ubicacion={formulario.origen}
           onChange={(origen) => updateFormulario({ origen })}
+          suggestPrefix="origen"
+          suggestFilter={filter}
+          recentUbicaciones={recent.origen}
+          favoriteUbicaciones={favoriteItems}
+          onSaveFavorite={saveFavorite}
         />
       </WizardSectionCard>
 
@@ -134,6 +166,11 @@ export default function WizardStep1() {
           tone="red"
           ubicacion={formulario.destino}
           onChange={(destino) => updateFormulario({ destino })}
+          suggestPrefix="destino"
+          suggestFilter={filter}
+          recentUbicaciones={recent.destino}
+          favoriteUbicaciones={favoriteItems}
+          onSaveFavorite={saveFavorite}
         />
       </WizardSectionCard>
     </WizardShell>

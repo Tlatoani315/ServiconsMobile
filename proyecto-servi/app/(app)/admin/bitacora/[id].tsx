@@ -195,7 +195,7 @@ export default function AdminBitacoraDetailScreen() {
                 value={formatContactosLabel(
                   resolveBitacoraContactos(
                     bitacora.contactos,
-                    formPreview as BitacoraFormulario | null,
+                    formPreview as unknown as BitacoraFormulario | null,
                   ),
                 )}
               />

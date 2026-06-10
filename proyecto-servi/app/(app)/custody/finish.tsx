@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GoogleMapsActions } from '../../../components/GoogleMapsActions';
 import { InAppCameraModal } from '../../../components/InAppCameraModal';
@@ -22,38 +22,49 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useEvidencias } from '../../../hooks/useEvidencias';
 import { useLocation } from '../../../hooks/useLocation';
-import { useRouteReports } from '../../../hooks/useRouteReports';
+import { useReportQueue } from '../../../hooks/useReportQueue';
 import { buildFirmaObject } from '../../../lib/signatures';
-import { deletePersistedPhoto, persistCameraPhoto } from '../../../lib/persistCameraPhoto';
+import { ensurePersistedCameraPhoto, persistCameraPhoto } from '../../../lib/persistCameraPhoto';
+import { getFailedReports, getPendingReports } from '../../../lib/reportQueueStorage';
 import { clearLiveLocation } from '../../../services/locationService';
+import { useRequireRouteId } from '../../../lib/useRequireRouteId';
 
 type CloseType = 'acompanamiento' | 'ruta';
 type Phase = 'tipo' | 'foto' | 'firmas' | 'observaciones';
 
 export default function CustodyFinishScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = useRequireRouteId(rawId);
   const router = useRouter();
   const { session, profile } = useAuth();
   const toast = useAppToast();
   const { getBitacoraDetalle, cerrarCustodia } = useBitacora();
   const { getCurrentLocation } = useLocation();
-  const { sendRouteReport } = useRouteReports();
+  const { enqueue, flush } = useReportQueue(id ?? undefined, session?.user?.id);
   const { uploadFirma } = useEvidencias();
 
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
   const [phase, setPhase] = useState<Phase>('tipo');
   const [closeType, setCloseType] = useState<CloseType | null>(null);
   const [firmaOperador, setFirmaOperador] = useState('');
-  const [firmaCustodio, setFirmaCustodio] = useState('');
   const [fotoFinalUri, setFotoFinalUri] = useState<string | null>(null);
   const [closeCoords, setCloseCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [observaciones, setObservaciones] = useState('');
   const [loading, setLoading] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const firmaCustodioRegistrada = useMemo(
+    () => bitacora?.formulario?.firmaCustodio?.trim() ?? '',
+    [bitacora?.formulario?.firmaCustodio],
+  );
 
   useEffect(() => {
-    if (id) getBitacoraDetalle(id).then(setBitacora);
+    if (!id) return;
+    getBitacoraDetalle(id)
+      .then(setBitacora)
+      .catch(() => setBitacora(null));
   }, [id, getBitacoraDetalle]);
 
   const steps = useMemo(() => {
@@ -99,8 +110,15 @@ export default function CustodyFinishScreen() {
   };
 
   const avanzarDesdeFirmas = () => {
-    if (!firmaOperador || !firmaCustodio) {
-      toast.warning('Firmas requeridas', 'Captura operador y custodio antes de continuar.');
+    if (!firmaOperador) {
+      toast.warning('Firma requerida', 'El operador debe firmar antes de continuar.');
+      return;
+    }
+    if (!firmaCustodioRegistrada) {
+      toast.warning(
+        'Firma del custodio',
+        'Esta bitacora no tiene firma del custodio. Debe firmarse al crear la bitacora.',
+      );
       return;
     }
     setPhase('observaciones');
@@ -109,8 +127,16 @@ export default function CustodyFinishScreen() {
   const enviarCierre = async () => {
     if (!id || !session?.user?.id || !closeType) return;
 
-    if (closeType === 'ruta' && (!firmaOperador || !firmaCustodio)) {
-      toast.warning('Firmas requeridas', 'El cierre de ruta requiere ambas firmas.');
+    if (!fotoFinalUri) {
+      toast.warning('Foto requerida', 'Toma la foto final antes de cerrar el servicio.');
+      return;
+    }
+
+    if (closeType === 'ruta' && (!firmaOperador || !firmaCustodioRegistrada)) {
+      toast.warning(
+        'Firmas requeridas',
+        'El cierre de ruta requiere la firma del operador y la del custodio registrada en la bitacora.',
+      );
       return;
     }
 
@@ -121,19 +147,34 @@ export default function CustodyFinishScreen() {
         ? { latitude: closeCoords.lat, longitude: closeCoords.lng, accuracy: null as number | null }
         : await getCurrentLocation();
 
-      const sent = await sendRouteReport({
+      const persistedPhoto = await ensurePersistedCameraPhoto(fotoFinalUri);
+
+      await enqueue({
         bitacoraId: id,
-        photoUri: fotoFinalUri!,
+        photoUri: persistedPhoto,
         latitud: latitude,
         longitud: longitude,
         precision_m: accuracy,
         estatus: 'termino',
+        reportIndex: 9999,
         fallbackUbicacion: bitacora?.formulario?.destino ?? bitacora?.formulario?.origen,
       });
 
-      if (!sent.ok) throw new Error(sent.error ?? 'No se pudo enviar la foto final a n8n.');
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await flush({ force: true });
+        const pending = await getPendingReports(id);
+        const failed = await getFailedReports(id);
+        if (pending.length === 0 && failed.length === 0) break;
+        if (failed.some((f) => f.estatus === 'termino')) {
+          throw new Error('No se pudo enviar la foto final a n8n tras varios intentos.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+      }
 
-      await deletePersistedPhoto(fotoFinalUri);
+      const stillPending = await getPendingReports(id);
+      if (stillPending.some((p) => p.estatus === 'termino')) {
+        throw new Error('La foto final sigue pendiente de envio. Revisa tu conexion.');
+      }
 
       let firmaOperadorJson = '';
       let firmaCustodioJson = '';
@@ -147,14 +188,14 @@ export default function CustodyFinishScreen() {
           signerName: operadorNombre,
         });
         const firmaCustodioObj = buildFirmaObject({
-          dataUrl: firmaCustodio,
+          dataUrl: firmaCustodioRegistrada,
           signerRole: 'custodio',
           signerName: custodioNombre,
         });
         firmaOperadorJson = JSON.stringify(firmaOperadorObj);
         firmaCustodioJson = JSON.stringify(firmaCustodioObj);
         await uploadFirma(firmaOperador, session.user.id, id, 'operador');
-        await uploadFirma(firmaCustodio, session.user.id, id, 'custodio');
+        await uploadFirma(firmaCustodioRegistrada, session.user.id, id, 'custodio');
       } else {
         firmaOperadorJson = JSON.stringify({ tipo: 'acompanamiento', sin_firma: true });
         firmaCustodioJson = JSON.stringify({ tipo: 'acompanamiento', custodio: profile?.nombre });
@@ -174,6 +215,8 @@ export default function CustodyFinishScreen() {
     }
   };
 
+  if (!id) return null;
+
   return (
     <SafeAreaView className="flex-1 bg-servi-fondo">
       <View className="bg-emerald-800 px-4 py-3">
@@ -185,7 +228,7 @@ export default function CustodyFinishScreen() {
         className="flex-1 px-4"
         scrollEnabled={scrollEnabled}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 32) }}
       >
         <Pressable className="py-3" onPress={() => router.back()}>
           <Text className="text-emerald-400">← Volver al servicio</Text>
@@ -212,7 +255,7 @@ export default function CustodyFinishScreen() {
             />
             <CloseTypeCard
               title="Custodia hasta destino"
-              desc="Foto final + firma del operador en pantalla."
+              desc="Foto final + firma del operador (el custodio ya firmo al crear la bitacora)."
               icon="flag-outline"
               selected={closeType === 'ruta'}
               onPress={() => {
@@ -269,17 +312,16 @@ export default function CustodyFinishScreen() {
 
         {phase === 'firmas' ? (
           <View>
+            <View className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-3">
+              <Text className="text-xs text-emerald-200">
+                Firma del custodio ({profile?.nombre ?? '—'}) registrada al crear la bitacora.
+              </Text>
+            </View>
             <SignaturePad
               label={`Firma operador (${bitacora?.formulario?.operador1?.nombre ?? '—'})`}
               value={firmaOperador}
               onDrawingChange={(drawing) => setScrollEnabled(!drawing)}
               onCapture={setFirmaOperador}
-            />
-            <SignaturePad
-              label={`Firma custodio (${profile?.nombre ?? '—'})`}
-              value={firmaCustodio}
-              onDrawingChange={(drawing) => setScrollEnabled(!drawing)}
-              onCapture={setFirmaCustodio}
             />
             <Pressable
               className="mt-2 items-center rounded-2xl bg-emerald-600 py-4"

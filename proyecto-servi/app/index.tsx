@@ -64,13 +64,14 @@ export default function WelcomeScreen() {
 
   useEffect(() => {
 
-    hasAcceptedPrivacyPolicy().then((accepted) => {
-
-      setShowPrivacy(!accepted);
-
-      setPrivacyReady(true);
-
-    });
+    hasAcceptedPrivacyPolicy()
+      .then((accepted) => {
+        setShowPrivacy(!accepted);
+        setPrivacyReady(true);
+      })
+      .catch(() => {
+        setPrivacyReady(true);
+      });
 
   }, []);
 

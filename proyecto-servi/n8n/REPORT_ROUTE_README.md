@@ -37,7 +37,7 @@ Webhook → Get a row + Logo → Merge → Preparar Datos → Procesar Imagen
 
 ## Activación en base de datos (estatus `inicio`)
 
-Cuando llega un reporte con `estatus=inicio`, el workflow:
+Cuando llega un reporte con `estatus=inicio` **y la bitácora aún no está `activo`**, el workflow:
 
 1. Guarda la evidencia en `evidencias` + Storage.
 2. **PATCH** a `bitacoras?id=eq.{uuid}` con `estado=activo` y `start_time=now()` (nodo **Activar bitacora**).
@@ -45,6 +45,20 @@ Cuando llega un reporte con `estatus=inicio`, el workflow:
 4. Envía WhatsApp con leyenda **“MONITOREO ACTIVO en base de datos”**.
 
 La app **no** activa la bitácora en Supabase; lo hace n8n.
+
+### Idempotencia de inicio
+
+El nodo **IF Inicio** exige `estatus=inicio` **y** `bitacoras.estado != activo`. Si la app reenvía inicio tras un crash, no se repite el PATCH de activación.
+
+### Manejo de errores (recomendado en n8n UI)
+
+En el editor de n8n, activa **Error Workflow** o añade rama desde nodos críticos hacia **Respond to Webhook** con:
+
+```json
+{ "success": false, "message": "descripcion del error" }
+```
+
+Sin respuesta, la app espera hasta timeout (45 s).
 
 ### Error PGRST100 (`id..uuid`)
 

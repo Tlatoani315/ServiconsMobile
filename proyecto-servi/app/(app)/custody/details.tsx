@@ -9,6 +9,7 @@ import { PermissionsPanel } from '../../../components/PermissionsPanel';
 import { ReportMapView } from '../../../components/ReportMapView';
 import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import { useLocation } from '../../../hooks/useLocation';
+import { useRequireRouteId } from '../../../lib/useRequireRouteId';
 
 const ESTADO_LABEL: Record<string, string> = {
   pendiente: 'Listo para iniciar',
@@ -18,7 +19,8 @@ const ESTADO_LABEL: Record<string, string> = {
 };
 
 export default function CustodyDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = useRequireRouteId(rawId);
   const router = useRouter();
   const { getBitacoraDetalle } = useBitacora();
   const { getCurrentLocation } = useLocation();
@@ -27,12 +29,14 @@ export default function CustodyDetailsScreen() {
   const [startCoords, setStartCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    if (id) {
-      getBitacoraDetalle(id).then((data) => {
+    if (!id) return;
+    setLoading(true);
+    getBitacoraDetalle(id)
+      .then((data) => {
         setBitacora(data);
-        setLoading(false);
-      });
-    }
+      })
+      .catch(() => setBitacora(null))
+      .finally(() => setLoading(false));
   }, [id, getBitacoraDetalle]);
 
   useEffect(() => {

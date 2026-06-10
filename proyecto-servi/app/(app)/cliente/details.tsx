@@ -13,10 +13,12 @@ import { useBitacora, type BitacoraDetalle } from '../../../hooks/useBitacora';
 import type { EstadoSegment } from '../../../lib/bitacoraStats';
 import { isGpsTransmissionLive } from '../../../lib/liveGpsStatus';
 import { getLiveLocationByBitacora, type LiveLocationRow } from '../../../services/locationService';
+import { useRequireRouteId } from '../../../lib/useRequireRouteId';
 
 /** Pantalla III — Detalle de servicio (cliente, solo lectura) */
 export default function ClienteDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = useRequireRouteId(rawId);
   const router = useRouter();
   const { getBitacoraDetalle, getBitacoraEvidencias } = useBitacora();
   const [bitacora, setBitacora] = useState<BitacoraDetalle | null>(null);
@@ -28,13 +30,16 @@ export default function ClienteDetailsScreen() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([getBitacoraDetalle(id), getBitacoraEvidencias(id)]).then(
-      ([detail, evs]) => {
+    Promise.all([getBitacoraDetalle(id), getBitacoraEvidencias(id)])
+      .then(([detail, evs]) => {
         setBitacora(detail);
         setEvidencias(evs);
-        setLoading(false);
-      },
-    );
+      })
+      .catch(() => {
+        setBitacora(null);
+        setEvidencias([]);
+      })
+      .finally(() => setLoading(false));
   }, [id, getBitacoraDetalle, getBitacoraEvidencias]);
 
   useEffect(() => {

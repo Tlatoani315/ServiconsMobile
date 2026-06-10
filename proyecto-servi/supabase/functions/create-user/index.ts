@@ -115,6 +115,22 @@ Deno.serve(async (req) => {
     return json({ error: createError.message }, 400);
   }
 
+  const userId = created.user?.id;
+  if (userId) {
+    const { error: profileUpdateError } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        role,
+        nombre: nombre.trim(),
+        empresa: empresa?.trim() ?? null,
+      })
+      .eq('id', userId);
+
+    if (profileUpdateError) {
+      return json({ error: `Usuario creado pero fallo actualizar perfil: ${profileUpdateError.message}` }, 500);
+    }
+  }
+
   return json({
     user: {
       id: created.user?.id,

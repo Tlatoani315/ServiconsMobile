@@ -2,6 +2,10 @@
 SERVICONS MOBILE — PROMPT DE PULIDO FINAL
 Para Cursor: la app ya existe, no construyas desde cero.
 Lee TODO antes de tocar una sola línea de código.
+
+NOTA (2026): Endpoints n8n unificados en report-route + sos.
+Ver instrucciones app/Endpoints a hacer.md (start-route, report-evidence,
+finish-route y export-pdf fueron retirados del codigo).
 ================================================================
 
 ## CONTEXTO

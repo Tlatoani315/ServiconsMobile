@@ -3,16 +3,19 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../../hooks/useAuth';
+import { useImmersiveAndroidNav } from '../../hooks/useImmersiveAndroidNav';
 
 export default function AppLayout() {
-  const { session, loading } = useAuth();
+  const { session, profile, loading } = useAuth();
   const router = useRouter();
 
+  useImmersiveAndroidNav(true);
+
   useEffect(() => {
-    if (!loading && !session) {
+    if (!loading && (!session || !profile)) {
       router.replace('/auth/login');
     }
-  }, [session, loading, router]);
+  }, [session, profile, loading, router]);
 
   if (loading) {
     return (
@@ -22,7 +25,7 @@ export default function AppLayout() {
     );
   }
 
-  if (!session) return null;
+  if (!session || !profile) return null;
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B1F17' } }} />
